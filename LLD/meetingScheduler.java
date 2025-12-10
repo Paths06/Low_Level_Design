@@ -14,6 +14,53 @@ Meeting Room Scheduler
     8.1 Update meeting participants - add participant (if cap crosses?)
 
 Entities: Meeting, MeetingRoom, Participant, TimeSlot, Calendar, MeetingRoomController
+
+Class Design Diagram:
+---------------------
+[MeetingScheduler] "1" o-- "1" [MeetingRoomController]
+[MeetingScheduler] "1" o-- "1" [RoomSelectionStrategy]
+[MeetingRoomController] "1" *-- "*" [MeetingRoom]
+[MeetingRoom] "1" *-- "1" [Calendar]
+[MeetingRoom] "1" *-- "*" [Meeting]
+[Meeting] "1" *-- "*" [Participant]
+[Meeting] "1" *-- "1" [TimeSlot]
+[Participant] ..|> [Observer] : Implements
+[FirstComeFirstServeStrategy] ..|> [RoomSelectionStrategy] : Implements
+
+Class Details:
+---------------------
+1. MeetingScheduler
+   - Role: Facade for scheduling logic.
+   - Attributes: roomController, selectionStrategy.
+   - Methods: scheduleMeeting().
+
+2. MeetingRoomController
+   - Role: Manages list of rooms and filters them.
+   - Attributes: meetingRooms (List).
+   - Methods: addMeetingRoom(), getAvailableMeetingRooms().
+
+3. MeetingRoom
+   - Role: Physical room entity.
+   - Attributes: roomId, capacity, calendar, meetingsHistory.
+   - Methods: isAvailable().
+
+4. Meeting
+   - Role: Event entity.
+   - Attributes: id, title, participants, timeSlot.
+   - Methods: notifyParticipants(), addParticipant().
+
+5. Calendar
+   - Role: Manages availability for a room or user.
+   - Attributes: bookings (List<TimeSlot>).
+   - Methods: isAvailable(), addTimeSlot().
+
+6. Participant
+   - Role: User attending meeting.
+   - Methods: update() [Observer pattern].
+
+7. RoomSelectionStrategy (Interface)
+   - Role: Algorithm to pick best room from available list.
+   - Methods: selectRoom().
 */
 
 import java.util.Arrays;

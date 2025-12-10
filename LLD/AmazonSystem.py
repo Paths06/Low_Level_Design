@@ -13,6 +13,43 @@ from typing import List, Dict, Optional
 # 3. Strategy: PaymentStrategy for interchangeable payment methods.
 # 4. Observer (Implicit): Notification service reacting to events.
 #
+# Class Design Diagram:
+# ---------------------
+# [Account] <|-- [Customer]
+# [Account] <|-- [Admin]
+# [Customer] "1" *-- "1" [ShoppingCart]
+# [Customer] "1" *-- "0..*" [Order]
+# [Order] "1" *-- "1..*" [Item]
+# [Catalog] ..> [Product] : Manages
+# [SearchService] <|.. [Catalog] : Implements
+# [PaymentStrategy] <|.. [CreditCardPayment] : Implements
+#
+# Class Details:
+# ---------------------
+# 1. Product
+#    - Attributes: product_id, name, description, price, category.
+#    - Methods: Builder (inner class) -> build().
+#
+# 2. Catalog (Singleton)
+#    - Role: Inventory management.
+#    - Methods: add_product(), search() [SearchService impl].
+#
+# 3. Account (ABC)
+#    - Role: Base User class.
+#    - Attributes: username, email, address.
+#
+# 4. Customer
+#    - Attributes: cart (ShoppingCart).
+#    - Methods: add_order().
+#
+# 5. Order
+#    - Role: Transaction record.
+#    - Attributes: items, total_amount, status.
+#    - Methods: set_status().
+# 
+# 6. PaymentStrategy (ABC)
+#    - Methods: process_payment(amount).
+#
 # ==============================================================================================
 
 # ==========================================

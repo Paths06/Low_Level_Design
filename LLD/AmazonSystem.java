@@ -1,3 +1,4 @@
+
 package com.amazon.lld;
 
 import java.util.*;
@@ -19,6 +20,61 @@ import java.util.*;
  * - LSP (Liskov Substitution): Customer/Admin can substitute the abstract Account class.
  * - ISP (Interface Segregation): Interfaces are focused (SearchService, PaymentStrategy).
  * - DIP (Dependency Inversion): High-level modules depend on abstractions (PaymentStrategy interface).
+ *
+ * Class Design Diagram:
+ * ---------------------
+ * [Account] <|-- [Customer]
+ * [Account] <|-- [Admin]
+ * [Customer] "1" *-- "1" [ShoppingCart]
+ * [Customer] "1" *-- "0..*" [Order]
+ * [Order] "1" *-- "1..*" [Item]
+ * [ShoppingCart] "1" *-- "0..*" [Item]
+ * [Catalog] ..> [Product] : Manages
+ * [SearchService] <|.. [Catalog] : Implements
+ * [PaymentStrategy] <|.. [CreditCardPayment] : Implements
+ *
+ * Class Details:
+ * ---------------------
+ * 1. Account (Abstract)
+ *    - Role: Base entity for Users.
+ *    - Attributes: userName, password, email, shippingAddress, status.
+ *
+ * 2. Customer (extends Account)
+ *    - Role: End user who shops.
+ *    - Attributes: cart (ShoppingCart), orders (List<Order>).
+ *    - Methods: getShoppingCart(), addOrder().
+ *
+ * 3. Admin (extends Account)
+ *    - Role: Administrator managing products.
+ *    - Methods: addProduct().
+ *
+ * 4. Product
+ *    - Role: Item for sale.
+ *    - Attributes: productID, name, description, price, category.
+ *    - Pattern: Uses inner Builder class for construction.
+ *
+ * 5. Catalog (Singleton)
+ *    - Role: Central inventory management.
+ *    - Attributes: productNames (Map).
+ *    - Methods: addProduct(), search() [Strategy Implementation].
+ *
+ * 6. Order
+ *    - Role: Represents a finalized purchase.
+ *    - Attributes: orderNumber, status, items, totalAmount.
+ *    - Methods: setStatus().
+ *
+ * 7. ShoppingCart
+ *    - Role: Temporary storage for items before checkout.
+ *    - Attributes: items (List<Item>).
+ *    - Methods: addItem(), getItems().
+ *
+ * 8. SearchService (Interface)
+ *    - Role: Abstraction for search algorithms.
+ *    - Methods: search(query).
+ *
+ * 9. PaymentStrategy (Interface)
+ *    - Role: Abstraction for payment processing.
+ *    - Methods: processPayment(amount).
  */
 
 public class AmazonSystem {
