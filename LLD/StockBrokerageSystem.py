@@ -23,6 +23,34 @@ Design Patterns:
 1. Singleton: StockExchange (Market), BrokerageService (Facade).
 2. Strategy/Polymorphism: Order types (Buy/Sell, Limit).
 3. Observer: (Implicit) Notifications via logging.
+
+Class Design Diagram:
+---------------------
+[BrokerService] "1" *-- "*" [User]
+[BrokerService] "1" *-- "1" [StockExchange]
+[User] "1" *-- "1" [Portfolio]
+[User] "1" *-- "1" [Account] (Funds)
+[User] "1" *-- "*" [Order]
+[Portfolio] "1" *-- "*" [Holding]
+[Order] <|-- [BuyOrder]
+[Order] <|-- [SellOrder]
+
+Class Details:
+---------------------
+1. BrokerService (Facade)
+   - Role: Main controller.
+   - Methods: placeOrder(), getQuote().
+
+2. StockExchange (Singleton)
+   - Role: Simulated market.
+   - Attributes: stocks (Symbol -> Price).
+
+3. Order
+   - Attributes: symbol, quantity, type, status.
+   - Methods: execute().
+
+4. Account
+   - Role: Managing cash.
 """
 
 # ==========================================

@@ -19,6 +19,38 @@ Design Patterns:
 1. Singleton: CricInfoManager (Facade).
 2. Observer: For notifying subscribers of live match events.
 3. Production Standards: Logging, thread-safety, type hints, and docstrings.
+
+Class Design Diagram:
+---------------------
+[CricInfoSystem] "1" *-- "*" [Match]
+[CricInfoSystem] "1" *-- "*" [Team]
+[CricInfoSystem] "1" *-- "*" [Player]
+[Match] "1" *-- "2" [Team]
+[Match] "1" *-- "1" [Scorecard]
+[Match] "1" *-- "*" [Commentary]
+[Match] ..|> [Observable]
+[Scorecard] "1" *-- "2" [Innings]
+[Innings] "1" *-- "*" [BattingStats]
+[Innings] "1" *-- "*" [BowlingStats]
+[User/Display] ..|> [Observer]
+
+Class Details:
+---------------------
+1. CricInfoSystem (Singleton)
+   - Role: Main controller. Finds matches, players.
+   - Methods: searchMatches(), getLiveMatches().
+
+2. Match
+   - Role: Represents a single game.
+   - Attributes: id, teams, status (LIVE, COMPLETED), scorecard.
+   - Methods: updateScore(), addCommentary() [Notify Observers].
+
+3. Scorecard
+   - Role: Container for innings and stats.
+
+4. Observer (Interface)
+   - Role: Real-time update receiver.
+   - Impl: LiveMatchDisplay.
 """
 
 # ==========================================

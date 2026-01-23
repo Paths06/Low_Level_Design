@@ -20,6 +20,41 @@ Key Requirements Implemented:
 Design Patterns:
 - Singleton: BMSService (Facade).
 - Lock/Synch: For concurrency control at the seat level.
+
+Class Design Diagram:
+---------------------
+[BMSService] "1" o-- "*" [Theater]
+[BMSService] "1" o-- "*" [Movie]
+[Theater] "1" *-- "*" [Screen]
+[Theater] "1" *-- "*" [Show]
+[Screen] "1" *-- "*" [Seat]
+[Show] ..> [ShowSeat] : Maps Seat to Status
+[ShowSeat] "1" *-- "1" [Seat]
+[Booking] "1" *-- "*" [ShowSeat]
+[Booking] "1" *-- "1" [User]
+[ShowSeat] : Uses ReentrantLock
+
+Class Details:
+---------------------
+1. BMSService (Singleton)
+   - Role: Main controller/facade for the application.
+   - Attributes: cityMovieMap, theaters.
+   - Methods: getMoviesByCity(), bookTicket() [Synch Logic], confirmBooking().
+
+2. Theater
+   - Role: Physical cinema facility.
+   - Attributes: id, name, city, screens, shows.
+   - Methods: addShow(), addScreen().
+
+3. Show
+   - Role: A specific movie playing at a specific time.
+   - Attributes: movie, screen, startTime, showSeats (Map).
+   - Methods: getShowSeat(), printAvailableSeats().
+
+4. ShowSeat
+   - Role: Represents a seat instance for a show with status/price.
+   - Attributes: seat, status (AVAILABLE/RESERVED), price, Lock (ReentrantLock).
+   - Methods: lock(), book(), confirm(), release().
 """
 
 # ==========================================

@@ -20,6 +20,33 @@ Design Patterns:
 1. Singleton: StreamingService (Facade).
 2. Strategy: RecommendationStrategy.
 3. State: Handled via Player status.
+
+Class Design Diagram:
+---------------------
+[StreamingService] "1" *-- "1" [Catalog]
+[StreamingService] "1" *-- "*" [User]
+[User] "1" *-- "1" [Player]
+[User] "1" *-- "*" [Playlist]
+[Catalog] "1" *-- "*" [Artist]
+[Artist] "1" *-- "*" [Album]
+[Album] "1" *-- "*" [Song]
+[Player] ..> [Song]
+
+Class Details:
+---------------------
+1. StreamingService
+   - Role: Facade.
+   - Methods: search(), recommend().
+
+2. Player
+   - Role: Controls audio playback.
+   - Attributes: currentSong, queue, state.
+
+3. Catalog
+   - Role: Index of all music.
+
+4. Song
+   - Attributes: id, title, duration, genre.
 """
 
 # ==========================================

@@ -21,6 +21,43 @@ Design Patterns:
 1. Singleton: AirlineSystem (Facade).
 2. Strategy: PricingStrategy (Dynamic/Static), PaymentProcessor (CreditCard).
 3. State: Handled via status attributes.
+
+Class Design Diagram:
+---------------------
+[AirlineSystem] "1" *-- "*" [Airline]
+[Airline] "1" *-- "*" [Flight]
+[Flight] "1" *-- "1" [Aircraft]
+[Flight] "1" *-- "*" [Seat]
+[Flight] "1" *-- "1" [PricingStrategy]
+[Booking] "1" *-- "1" [Flight]
+[Booking] "1" *-- "*" [Seat]
+[Booking] "1" *-- "1" [Passenger]
+[Booking] ..> [PaymentProcessor] : Uses
+[Booking] ..> [MealType] : Has
+[User] <|-- [Passenger]
+[User] <|-- [Admin]
+[User] <|-- [Crew]
+
+Class Details:
+---------------------
+1. AirlineSystem (Singleton)
+   - Role: Main controller.
+   - Methods: searchFlights(), createBooking() [Transaction].
+
+2. Flight
+   - Role: Represents a scheduled journey.
+   - Attributes: flightNumber, source, dest, date, seats, pricingStrategy.
+   - Methods: calculatePrice(), bookSeats().
+
+3. Seat
+   - Attributes: seatNumber, isBooked.
+
+4. PricingStrategy (Interface)
+   - Role: Calculate price based on demand/time.
+   - Impls: StaticPricing, DynamicPricing.
+
+5. PaymentProcessor (Interface)
+   - Role: Handle payments.
 """
 
 # ==========================================

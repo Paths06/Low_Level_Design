@@ -23,6 +23,35 @@ Design Patterns:
 1. Singleton: RideSharingService (Facade).
 2. Strategy: PricingStrategy (Surge/RideType).
 3. State: Handled via TripStatus.
+
+Class Design Diagram:
+---------------------
+[RideSharingService] "1" *-- "*" [Driver]
+[RideSharingService] "1" *-- "*" [Rider]
+[RideSharingService] "1" *-- "*" [Trip]
+[Trip] "1" *-- "1" [Driver]
+[Trip] "1" *-- "1" [Rider]
+[Trip] "1" *-- "1" [PricingStrategy]
+[Driver] <|-- [User]
+[Rider] <|-- [User]
+[PricingStrategy] <|-- [RegularPricing]
+[PricingStrategy] <|-- [PremiumPricing]
+
+Class Details:
+---------------------
+1. RideSharingService (Singleton)
+   - Role: Main controller.
+   - Methods: requestRide(), completeRide().
+
+2. Trip
+   - Attributes: id, rider, driver, src, dest, status, price.
+   - Methods: start(), end(), calculateFare().
+
+3. Driver
+   - Attributes: status (AVAILABLE, BUSY), location.
+
+4. PricingStrategy
+   - Role: Calculate fare based on distance/time.
 """
 
 # ==========================================

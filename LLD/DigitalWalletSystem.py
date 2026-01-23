@@ -22,6 +22,33 @@ Design Patterns:
 1. Singleton: WalletService (Facade).
 2. Factory: For creating Transactions.
 3. Strategy: PaymentMethod.
+
+Class Design Diagram:
+---------------------
+[WalletService] "1" *-- "*" [User]
+[User] "1" *-- "1" [Wallet]
+[Wallet] "1" *-- "*" [PaymentMethod]
+[Wallet] "1" *-- "*" [Transaction]
+[Wallet] "1" *-- "*" [Currency] (Balance Map)
+[Transaction] <|-- [TransferTransaction]
+[Transaction] <|-- [TopUpTransaction]
+[Transaction] <|-- [WithdrawTransaction]
+
+Class Details:
+---------------------
+1. WalletService
+   - Role: Facade.
+   - Methods: registerUser(), processTransaction().
+
+2. User & Wallet
+   - Wallet holds a Map<Currency, BigDecimal> for balances.
+
+3. Transaction
+   - Role: Immutable record.
+   - Attributes: id, source, target, amount, currency, status.
+
+4. CurrencyManager
+   - Role: Handles rates and conversion.
 """
 
 # ==========================================

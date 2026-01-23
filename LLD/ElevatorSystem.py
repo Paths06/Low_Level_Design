@@ -26,6 +26,36 @@ Design Patterns:
 Algorithm Used: LOOK (Scanning)
 - Elevator moves in current direction as long as there are requests.
 - If no requests in current direction, it switches or goes IDLE.
+
+Class Design Diagram:
+---------------------
+[ElevatorController] "1" *-- "*" [Elevator]
+[ElevatorController] "1" *-- "1" [DispatchStrategy]
+[Elevator] "1" *-- "1" [RequestQueue]
+[Request] <|-- [InternalRequest]
+[Request] <|-- [ExternalRequest]
+[Elevator] ..> [Direction]
+[Elevator] ..> [State]
+
+Class Details:
+---------------------
+1. ElevatorController (Singleton)
+   - Role: Central dispatcher. Handles External requests and assigns best Elevator.
+   - Attributes: elevators (List).
+   - Methods: requestElevator(), step() [Simulation ticker].
+
+2. Elevator
+   - Role: The physical car.
+   - Attributes: id, currentFloor, direction, capacity, requests (PriorityQueue).
+   - Methods: addRequest(), move(), openDoor().
+
+3. Request (Abstract)
+   - Role: Represents a button press.
+   - Attributes: floor, direction.
+
+4. DispatchStrategy
+   - Role: Algorithm to assign external request to an elevator.
+   - Logic: Finds nearest elevator moving in same direction or Idle.
 """
 
 # ==========================================

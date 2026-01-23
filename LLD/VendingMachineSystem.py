@@ -20,6 +20,46 @@ Design Patterns:
 1. State Pattern: Encapsulates state-specific behavior.
 2. Singleton: VendingMachine (Context).
 3. Strategy: Implicitly handled via State transitions.
+
+Class Design Diagram:
+---------------------
+[VendingMachine] "1" *-- "1" [Inventory]
+[VendingMachine] "1" *-- "1" [VendingMachineState]
+[VendingMachineState] <|.. [IdleState]
+[VendingMachineState] <|.. [ReadyState]
+[VendingMachineState] <|.. [DispenseState]
+[Inventory] "1" *-- "*" [Product]
+[IdleState] ..> [Inventory] : Checks Stock
+[ReadyState] ..> [Coin/Note] : Accepts Payment
+[DispenseState] ..> [Inventory] : Updates Stock
+
+Class Details:
+---------------------
+1. VendingMachine (Singleton, Context)
+   - Role: Main system controller.
+   - Attributes: state (VendingMachineState), inventory, currentBalance, selectedProduct.
+   - Methods: setState(), selectProduct(), insertMoney(), dispense().
+
+2. VendingMachineState (Interface)
+   - Role: State abstraction.
+   - Methods: selectProduct(), insertCoin(), insertNote(), dispense(), abort().
+
+3. IdleState (Impl State)
+   - Role: Initial state waiting for selection.
+   - Logic: Allows selection, forbids payment.
+
+4. ReadyState (Impl State)
+   - Role: Handling Payment.
+   - Logic: Accumulates balance, checks against price, transitions to Dispense.
+
+5. DispenseState (Impl State)
+   - Role: Delivering product.
+   - Logic: Deducts inventory, calculates change, resets machine.
+
+6. Inventory
+   - Role: Stock management.
+   - Attributes: stock (ConcurrentHashMap<Product, Integer>).
+   - Methods: addProduct(), deduct(), isAvailable().
 """
 
 # ==========================================

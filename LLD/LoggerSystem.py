@@ -25,6 +25,36 @@ Design Patterns:
 2. Observer / Strategy: 'LogAppender' interface for multiple output destinations.
 3. Chain of Responsibility: (Optional) Can be used for level-based filtering, 
    but here handled via configuration.
+
+Class Design Diagram:
+---------------------
+[Logger] "1" *-- "1" [LoggerConfig]
+[LoggerConfig] "1" *-- "*" [LogAppender]
+[LogAppender] <|.. [ConsoleAppender]
+[LogAppender] <|.. [FileAppender]
+[LogAppender] <|.. [DatabaseAppender]
+[LogMessage] : Data Transfer Object
+[LogLevel] : Enum
+
+Class Details:
+---------------------
+1. Logger (Singleton)
+   - Role: Central access point for logging.
+   - Attributes: config.
+   - Methods: log(), debug(), info(), error(), setConfig().
+
+2. LoggerConfig
+   - Role: Holds configuration state.
+   - Attributes: minimumLevel, appenders (List).
+   - Methods: addAppender(), setLevel().
+
+3. LogAppender (Interface)
+   - Role: Abstraction for output destinations.
+   - Methods: append(LogMessage).
+
+4. ConsoleAppender / FileAppender
+   - Role: Concrete implementations.
+   - Logic: Writes formatted string to specific output (System.out, File).
 """
 
 # ==========================================

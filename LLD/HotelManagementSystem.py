@@ -20,6 +20,36 @@ Design Patterns:
 1. Singleton: HotelManager (Facade).
 2. Factory: RoomFactory (Creating appropriate Room subclasses).
 3. Strategy: PaymentStrategy.
+
+Class Design Diagram:
+---------------------
+[HotelManager] "1" *-- "*" [Room]
+[HotelManager] "1" *-- "*" [Guest]
+[HotelManager] "1" *-- "*" [Reservation]
+[Room] <|-- [StandardRoom]
+[Room] <|-- [DeluxeRoom]
+[Room] <|-- [SuiteRoom]
+[Reservation] "1" *-- "1" [Guest]
+[Reservation] "1" *-- "1" [Room]
+[Reservation] "1" *-- "1" [Invoice]
+[Room] ..> [RoomStatus]
+
+Class Details:
+---------------------
+1. HotelManager (Singleton)
+   - Role: Central system controller.
+   - Methods: addRoom(), findAvailableRoom(), bookRoom(), checkIn(), checkOut().
+
+2. Room (Abstract)
+   - Role: Physical room entity.
+   - Attributes: id, type, price, status (Lock for concurrency).
+
+3. Guest
+   - Attributes: id, name, email.
+
+4. Reservation
+   - Role: Transaction record.
+   - Attributes: id, guest, room, dateRange, status.
 """
 
 # ==========================================

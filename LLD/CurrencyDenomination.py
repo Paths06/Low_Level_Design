@@ -18,6 +18,28 @@ Design Patterns:
 1. Singleton: DenominationService (Facade).
 2. Strategy: CurrencyStrategy (INR, USD, EUR).
 3. Strategy: CalculationStrategy (Greedy, DP).
+
+Class Design Diagram:
+---------------------
+[DenominationService] "1" *-- "1" [CurrencyStrategy]
+[DenominationService] "1" *-- "1" [CalculationStrategy]
+[CurrencyStrategy] <|-- [INRStrategy]
+[CurrencyStrategy] <|-- [USDStrategy]
+[CurrencyStrategy] <|-- [EURStrategy]
+[CalculationStrategy] <|-- [GreedyStrategy]
+[CalculationStrategy] <|-- [DPStrategy]
+
+Class Details:
+---------------------
+1. DenominationService (Singleton)
+   - Methods: calculate(), setCalculationStrategy().
+
+2. CalculationStrategy (Interface)
+   - Role: Algorithm for computing denominations.
+   - Impl: GreedyStrategy (fast), DPStrategy (optimal).
+
+3. CurrencyStrategy (Interface)
+   - Role: Defines denominations for a currency.
 """
 
 # ==========================================
