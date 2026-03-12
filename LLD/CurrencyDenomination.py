@@ -1,21 +1,88 @@
+# fmt: off
+# ==============================================================================
+#  CURRENCY DENOMINATION CALCULATOR — ASCII CLASS DIAGRAM
+# ==============================================================================
+#
+#  ┌──────────────────────────────────────────────────────────────────────────┐
+#  │                 CURRENCY DENOMINATION CALCULATOR                         │
+#  └──────────────────────────────────────────────────────────────────────────┘
+#
+#  ┌──────────────────────────────────┐
+#  │        DenominationService       │  ← Facade
+#  ├──────────────────────────────────┤
+#  │ + currency_strategy: CurrencyStrategy│
+#  │ + calc_strategy: CalcStrategy    │
+#  ├──────────────────────────────────┤
+#  │ + set_currency_strategy()        │
+#  │ + set_calculation_strategy()     │
+#  │ + calculate_and_print(amount)    │
+#  └────────┬──────────────┬──────────┘
+#           │              │
+#    1 uses │              │ 1 uses
+#           ▼              ▼
+#  ┌─────────────────┐  ┌──────────────────────────────┐
+#  │ CurrencyStrategy│  │     CalculationStrategy      │
+#  │  (ABC/Interface)│  │       (ABC/Interface)         │
+#  ├─────────────────┤  ├──────────────────────────────┤
+#  │+get_denominations│ │+calculate(units, denoms)      │
+#  │  (): List       │  │  : Dict[Denomination, int]   │
+#  └────────┬────────┘  └──────────────┬───────────────┘
+#           │                          │
+#     ┌─────┴─────┐              ┌─────┴──────┐
+#     │           │              │            │
+#     ▼           ▼              ▼            ▼
+#  ┌───────┐  ┌───────┐  ┌────────────┐  ┌──────────┐
+#  │  INR  │  │  USD  │  │  Greedy    │  │    DP    │
+#  │Strategy│ │Strategy│ │  Strategy  │  │ Strategy │
+#  ├───────┤  ├───────┤  ├────────────┤  ├──────────┤
+#  │returns│  │returns│  │ O(n) fast  │  │O(n*amt)  │
+#  │ INR   │  │ USD   │  │ not always │  │ always   │
+#  │denoms │  │denoms │  │ optimal    │  │ optimal  │
+#  └───────┘  └───────┘  └────────────┘  └──────────┘
+#
+#  ┌──────────────────────────────┐
+#  │        Denomination          │  ← Value Object / Model
+#  ├──────────────────────────────┤
+#  │ + value: Decimal             │
+#  │ + name: str                  │
+#  │ + type: str (BILL/COIN)      │
+#  └──────────────────────────────┘
+#
+#  ┌──────────────────────┐
+#  │   DenominationType   │  ← Constants
+#  ├──────────────────────┤
+#  │ BILL = "BILL"        │
+#  │ COIN = "COIN"        │
+#  └──────────────────────┘
+#
+#  RELATIONSHIPS:
+#  DenominationService ──1──> CurrencyStrategy   (Strategy Pattern, swappable)
+#  DenominationService ──1──> CalculationStrategy(Strategy Pattern, swappable)
+#  INRStrategy  ──▷── CurrencyStrategy           (implements)
+#  USDStrategy  ──▷── CurrencyStrategy           (implements)
+#  GreedyStrategy──▷── CalculationStrategy       (implements, O(n) not always optimal)
+#  DPStrategy   ──▷── CalculationStrategy        (implements, O(n×amt) always optimal)
+#  Both strategies return Dict[Denomination, int] → count of each bill/coin
+# ==============================================================================
+# fmt: on
 import math
 from abc import ABC, abstractmethod
 from decimal import Decimal, ROUND_HALF_UP
-from typing import List, Dict, Optional
+from typing import List, Dict
 
 """
 ==============================================================================================
-CURRENCY DENOMINATION CALCULATOR LOW LEVEL DESIGN (PYTHON - PRODUCTION GRADE)
+CURRENCY DENOMINATION CALCULATOR LOW LEVEL DESIGN (INTERVIEW OPTIMIZED)
 ==============================================================================================
 
 Key Features:
 1. Greedy Algorithm: Fast calculation (O(n) time).
 2. Dynamic Programming: Guarantees minimum count (O(amount * n) time).
 3. Multi-Currency: INR, USD, EUR via Strategy Pattern.
-4. Precision: Uses decimal.Decimal for accurate currency handling.
+4. Precision: Uses Decimal for accurate currency handling.
 
 Design Patterns:
-1. Singleton: DenominationService (Facade).
+1. Facade: DenominationService (Controller).
 2. Strategy: CurrencyStrategy (INR, USD, EUR).
 3. Strategy: CalculationStrategy (Greedy, DP).
 
@@ -25,18 +92,17 @@ Class Design Diagram:
 [DenominationService] "1" *-- "1" [CalculationStrategy]
 [CurrencyStrategy] <|-- [INRStrategy]
 [CurrencyStrategy] <|-- [USDStrategy]
-[CurrencyStrategy] <|-- [EURStrategy]
 [CalculationStrategy] <|-- [GreedyStrategy]
 [CalculationStrategy] <|-- [DPStrategy]
 
 Class Details:
 ---------------------
-1. DenominationService (Singleton)
-   - Methods: calculate(), setCalculationStrategy().
+1. DenominationService
+   - Methods: calculate_and_print(), set_currency_strategy(), set_calculation_strategy().
 
 2. CalculationStrategy (Interface)
    - Role: Algorithm for computing denominations.
-   - Impl: GreedyStrategy (fast), DPStrategy (optimal).
+   - Impl: GreedyStrategy (fast/O(n)), DPStrategy (optimal/O(amount*n)).
 
 3. CurrencyStrategy (Interface)
    - Role: Defines denominations for a currency.
@@ -81,9 +147,7 @@ class INRStrategy(CurrencyStrategy):
             Denomination(Decimal("1"), "one rupee bill", DenominationType.BILL),
             Denomination(Decimal("0.50"), "fifty paisa coin", DenominationType.COIN),
             Denomination(Decimal("0.25"), "twenty-five paisa coin", DenominationType.COIN),
-            Denomination(Decimal("0.20"), "twenty paisa coin", DenominationType.COIN),
             Denomination(Decimal("0.10"), "ten paisa coin", DenominationType.COIN),
-            Denomination(Decimal("0.05"), "five paisa coin", DenominationType.COIN),
         ]
 
 class USDStrategy(CurrencyStrategy):
@@ -111,7 +175,7 @@ class CalculationStrategy(ABC):
         pass
 
 class GreedyStrategy(CalculationStrategy):
-    """Calculates using largest denomination first (O(n))."""
+    """Calculates using largest denomination first. O(n) but may not be optimal."""
     def calculate(self, amount_units: int, denominations: List[Denomination]) -> Dict[Denomination, int]:
         result = {}
         for d in denominations:
@@ -123,21 +187,23 @@ class GreedyStrategy(CalculationStrategy):
         return result
 
 class DPStrategy(CalculationStrategy):
-    """Guarantees minimum number of denominations (O(amount * n))."""
+    """Guarantees minimum number of denominations. O(amount * n)."""
     def calculate(self, amount_units: int, denominations: List[Denomination]) -> Dict[Denomination, int]:
         dp = [float('inf')] * (amount_units + 1)
         parent = [-1] * (amount_units + 1)
         dp[0] = 0
-        
-        denom_units = [int((d.value * Decimal("100")).quantize(Decimal("1"), rounding=ROUND_HALF_UP)) for d in denominations]
-        
+
+        denom_units = [
+            int((d.value * Decimal("100")).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+            for d in denominations
+        ]
+
         for i in range(1, amount_units + 1):
             for j, unit in enumerate(denom_units):
-                if unit <= i and dp[i - unit] != float('inf'):
-                    if dp[i - unit] + 1 < dp[i]:
-                        dp[i] = dp[i - unit] + 1
-                        parent[i] = j
-        
+                if unit <= i and dp[i - unit] + 1 < dp[i]:
+                    dp[i] = dp[i - unit] + 1
+                    parent[i] = j
+
         result = {}
         curr = amount_units
         while curr > 0 and parent[curr] != -1:
@@ -148,30 +214,15 @@ class DPStrategy(CalculationStrategy):
         return result
 
 # ==========================================
-# Service (Singleton)
+# Service (Facade)
 # ==========================================
 
 class DenominationService:
-    """Singleton service to compute denominations."""
-    _instance = None
-    
-    def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super(DenominationService, cls).__new__(cls)
-            cls._instance._initialized = False
-        return cls._instance
-
+    """Service to compute denominations for a given amount."""
     def __init__(self):
-        if self._initialized:
-            return
-        self.currency_strategy = INRStrategy()
-        self.calc_strategy = GreedyStrategy()
-        self._initialized = True
+        self.currency_strategy: CurrencyStrategy = INRStrategy()
+        self.calc_strategy: CalculationStrategy = GreedyStrategy()
         print("INFO: Denomination Service initialized.")
-
-    @classmethod
-    def get_instance(cls):
-        return cls()
 
     def set_currency_strategy(self, strategy: CurrencyStrategy):
         self.currency_strategy = strategy
@@ -183,47 +234,42 @@ class DenominationService:
         """Converts amount to smallest unit and runs calculation."""
         units = int((amount * Decimal("100")).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
         result = self.calc_strategy.calculate(units, self.currency_strategy.get_denominations())
-        
-        bills = []
-        coins = []
-        
+
+        bills, coins = [], []
         for d, count in result.items():
-            text = f"{self._get_count_word(count)} {d.name}"
-            if d.type == DenominationType.BILL:
-                bills.append(text)
-            else:
-                coins.append(text)
-        
+            text = f"{self._count_word(count)} {d.name}"
+            (bills if d.type == DenominationType.BILL else coins).append(text)
+
         print(f"INFO: Amount: {amount}")
         print(f"INFO: Bills: {', '.join(bills) if bills else 'none'}")
         print(f"INFO: Coins: {', '.join(coins) if coins else 'none'}")
 
-    def _get_count_word(self, count: int) -> str:
+    def _count_word(self, count: int) -> str:
         words = ["", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"]
         return words[count] if count <= 10 else str(count)
 
 # ==========================================
-# Main Execution
+# Main Execution / Demo
 # ==========================================
 
 if __name__ == "__main__":
     print("--- Currency Denomination Calculator Demo ---")
-    
-    service = DenominationService.get_instance()
+
+    service = DenominationService()
     amount = Decimal("143.25")
-    
+
     # INR with GREEDY
     print("=== INR (Greedy Strategy) ===")
     service.calculate_and_print(amount)
-    
+
     # USD with DP
     print("\n=== USD (DP Strategy) ===")
     service.set_currency_strategy(USDStrategy())
     service.set_calculation_strategy(DPStrategy())
     service.calculate_and_print(amount)
-    
-    # Custom denominations where Greedy fails
-    print("\n=== Custom Demo: Greedy vs DP ===")
+
+    # Note: Classic demo where Greedy fails
+    print("\n=== Greedy vs DP Demo ===")
     print("Denominations: [1, 3, 4], Amount: 6")
-    # Simulate custom strategy if needed, but here we just note it.
-    # The logic is verified via the DPStrategy implementation above.
+    print("Greedy picks: 4+1+1 = 3 coins | DP picks: 3+3 = 2 coins")
+    # The DPStrategy correctly handles this case internally

@@ -1,24 +1,95 @@
+# fmt: off
+# ==============================================================================
+#  BOOKMYSHOW SYSTEM — ASCII CLASS DIAGRAM
+# ==============================================================================
+#
+#  ┌───────────────────────────────────────────────────────────────────────┐
+#  │                      BOOKMYSHOW SYSTEM                                │
+#  └───────────────────────────────────────────────────────────────────────┘
+#
+#  ┌──────────────────────┐         ┌─────────────────────────────┐
+#  │     BMSService       │ 1    *  │          Theater            │
+#  │      (Facade)        │────────>│─────────────────────────────│
+#  ├──────────────────────┤         │ + id, name, city: str       │
+#  │ + movies: Dict       │         │ + screens: List[Screen]     │
+#  │ + theaters: List     │         │ + shows: List[Show]         │
+#  ├──────────────────────┤         ├─────────────────────────────┤
+#  │ + add_movie()        │         │ + add_screen()              │
+#  │ + add_theater()      │         │ + add_show()                │
+#  │ + get_movies_by_city()│        └──────────┬──────────────────┘
+#  │ + book_ticket()      │                    │ 1     *
+#  │ + confirm_booking()  │                    ▼
+#  └──────────┬───────────┘         ┌─────────────────────────────┐
+#             │                     │          Screen             │
+#             │ 1    *              ├─────────────────────────────┤
+#             ▼                     │ + id, name: str             │
+#  ┌──────────────────────┐         │ + seats: List[Seat]         │
+#  │       Movie          │         ├─────────────────────────────┤
+#  ├──────────────────────┤         │ + add_seat()                │
+#  │ + id, title: str     │         └──────────┬──────────────────┘
+#  │ + duration_mins: int │                    │ 1     *
+#  └──────────────────────┘                    ▼
+#                               ┌─────────────────────────────┐
+#  ┌──────────────────────┐     │            Seat             │
+#  │        Show          │ *   ├─────────────────────────────┤
+#  ├──────────────────────┤─────│ + id: str                   │
+#  │ + show_id: str       │     │ + type: SeatType (enum)     │
+#  │ + movie: Movie       │     └─────────────────────────────┘
+#  │ + screen: Screen     │              ▲ 1
+#  │ + start_time         │              │
+#  │ + show_seats: Dict   │     ┌────────┴────────────────────┐
+#  ├──────────────────────┤     │         ShowSeat            │
+#  │ + get_show_seat()    │────>├─────────────────────────────┤
+#  │ + print_available()  │  *  │ + seat: Seat                │
+#  └──────────────────────┘     │ + price: float              │
+#                               │ + status: SeatStatus(enum)  │
+#  ┌──────────────────────┐     │ + lock: Lock                │
+#  │       Booking        │     ├─────────────────────────────┤
+#  ├──────────────────────┤     │ + is_available(): bool      │
+#  │ + booking_id: str    │     │ + reserve(): bool           │
+#  │ + user: User         │     │ + confirm()                 │
+#  │ + show: Show         │     │ + release()                 │
+#  │ + booked_seats[]     │     └─────────────────────────────┘
+#  │ + status: Booking..  │
+#  │ + total_amount: float│  ┌─────────────────┐
+#  ├──────────────────────┤  │      User       │
+#  │ + confirm()          │  ├─────────────────┤
+#  │ + cancel()           │  │ + id: str       │
+#  └──────────────────────┘  │ + name: str     │
+#                            └─────────────────┘
+#
+#  RELATIONSHIPS:
+#  BMSService ──*──> Theater       (aggregates theaters)
+#  BMSService ──*──> Movie         (aggregates movies)
+#  Theater    ──*──> Screen        (owns screens)
+#  Theater    ──*──> Show          (schedules shows)
+#  Screen     ──*──> Seat          (owns seats)
+#  Show ──────────> ShowSeat{}     (wraps each Seat for a show instance)
+#  ShowSeat   ──1──> Seat          (mirrors a physical seat)
+#  Booking    ──*──> ShowSeat      (books specific show seats)
+#  Booking    ──1──> User          (belongs to one user)
+#  CONCURRENCY: ShowSeat.lock prevents double-booking (deadlock prevention: sorted order)
+# ==============================================================================
+# fmt: on
 import threading
 import uuid
-from abc import ABC, abstractmethod
 from datetime import datetime
 from enum import Enum
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional
 
 """
 ==============================================================================================
-BOOKMYSHOW LOW LEVEL DESIGN (PYTHON - PRODUCTION GRADE)
+BOOKMYSHOW LOW LEVEL DESIGN (INTERVIEW OPTIMIZED)
 ==============================================================================================
 
 Key Requirements Implemented:
 1. Search: Search movies by City.
 2. Booking: Select City -> Movie -> Theater -> Show -> Seats.
-3. Concurrency: Thread-safe booking with granular seat-level locks and deadlock prevention.
+3. Concurrency: Thread-safe booking with seat-level locks and deadlock prevention.
 4. Extensibility: Different Seat Types (Silver, Gold, Platinum).
-5. Robustness: Logging, custom exceptions, and type hinting.
 
 Design Patterns:
-- Singleton: BMSService (Facade).
+- Facade: BMSService (Central Controller).
 - Lock/Synch: For concurrency control at the seat level.
 
 Class Design Diagram:
@@ -32,29 +103,26 @@ Class Design Diagram:
 [ShowSeat] "1" *-- "1" [Seat]
 [Booking] "1" *-- "*" [ShowSeat]
 [Booking] "1" *-- "1" [User]
-[ShowSeat] : Uses ReentrantLock
 
 Class Details:
 ---------------------
-1. BMSService (Singleton)
-   - Role: Main controller/facade for the application.
-   - Attributes: cityMovieMap, theaters.
-   - Methods: getMoviesByCity(), bookTicket() [Synch Logic], confirmBooking().
+1. BMSService (Facade)
+   - Role: Main controller for the application.
+   - Attributes: theaters, movies.
+   - Methods: getMoviesByCity(), bookTicket(), confirmBooking().
 
 2. Theater
    - Role: Physical cinema facility.
    - Attributes: id, name, city, screens, shows.
-   - Methods: addShow(), addScreen().
 
 3. Show
-   - Role: A specific movie playing at a specific time.
+   - Role: A specific movie playing at a specific time on a screen.
    - Attributes: movie, screen, startTime, showSeats (Map).
-   - Methods: getShowSeat(), printAvailableSeats().
 
 4. ShowSeat
-   - Role: Represents a seat instance for a show with status/price.
-   - Attributes: seat, status (AVAILABLE/RESERVED), price, Lock (ReentrantLock).
-   - Methods: lock(), book(), confirm(), release().
+   - Role: Represents a seat instance for a show with status and price.
+   - Attributes: seat, status (AVAILABLE/RESERVED/BOOKED), price, lock.
+   - Methods: reserve(), confirm(), release().
 """
 
 # ==========================================
@@ -91,7 +159,6 @@ class BookingStatus(Enum):
     PENDING = "PENDING"
     CONFIRMED = "CONFIRMED"
     CANCELLED = "CANCELLED"
-    EXPIRED = "EXPIRED"
 
 # ==========================================
 # Domain Models
@@ -168,9 +235,8 @@ class Show:
         return self.show_seats.get(seat_id)
 
     def print_available_seats(self):
-        print(f"INFO: Checking available seats for {self.movie.title}:")
         available = [f"{ss.seat.id}(${ss.price})" for ss in self.show_seats.values() if ss.is_available()]
-        print("INFO: Available: " + " ".join(available))
+        print(f"INFO: Available seats for {self.movie.title}: {' '.join(available)}")
 
 class Theater:
     def __init__(self, theater_id: str, name: str, city: str):
@@ -199,7 +265,7 @@ class Booking:
         self.status = BookingStatus.CONFIRMED
         for seat in self.booked_seats:
             seat.confirm()
-        print(f"INFO: Booking {self.booking_id} confirmed for {self.user.name}")
+        print(f"INFO: Booking {self.booking_id} confirmed for {self.user.name}. Total: ${self.total_amount}")
 
     def cancel(self):
         self.status = BookingStatus.CANCELLED
@@ -208,31 +274,14 @@ class Booking:
         print(f"INFO: Booking {self.booking_id} cancelled.")
 
 # ==========================================
-# Service Layer (Singleton)
+# Service Layer (Facade)
 # ==========================================
 
 class BMSService:
-    _instance = None
-    _singleton_lock = threading.Lock()
-
-    def __new__(cls):
-        with cls._singleton_lock:
-            if cls._instance is None:
-                cls._instance = super(BMSService, cls).__new__(cls)
-                cls._instance._initialized = False
-            return cls._instance
-
     def __init__(self):
-        if self._initialized:
-            return
         self.movies: Dict[str, Movie] = {}
         self.theaters: List[Theater] = []
-        self._initialized = True
-        print("INFO: BookMyShow Service Facade initialized.")
-
-    @classmethod
-    def get_instance(cls):
-        return cls()
+        print("INFO: BookMyShow Service initialized.")
 
     def add_movie(self, movie: Movie):
         self.movies[movie.id] = movie
@@ -257,10 +306,10 @@ class BMSService:
         for sid in seat_ids:
             s_seat = show.get_show_seat(sid)
             if not s_seat:
-                raise BMSException(f"Seat {sid} does not exist for this show.")
+                raise BMSException(f"Seat {sid} does not exist.")
             seats_to_book.append(s_seat)
 
-        # DEADLOCK PREVENTION: Sort seats by ID to maintain consistent locking order
+        # DEADLOCK PREVENTION: Sort by ID for consistent lock order
         seats_to_book.sort(key=lambda s: s.seat.id)
 
         acquired_locks = []
@@ -268,7 +317,6 @@ class BMSService:
             # Phase 1: Acquire Locks
             for sseat in seats_to_book:
                 if not sseat.lock.acquire(timeout=5):
-                    print(f"ERROR: Failed to acquire lock for seat {sseat.seat.id}")
                     raise BookingFailedException("System busy, please try again.")
                 acquired_locks.append(sseat.lock)
 
@@ -276,36 +324,34 @@ class BMSService:
             for sseat in seats_to_book:
                 if not sseat.is_available():
                     print(f"WARNING: Seat {sseat.seat.id} is no longer available.")
-                    raise SeatUnavailableException(f"Seat {sseat.seat.id} is already taken.")
+                    raise SeatUnavailableException(f"Seat {sseat.seat.id} is taken.")
 
-            # Phase 3: Selection/Reservation
+            # Phase 3: Reserve
             for sseat in seats_to_book:
                 sseat.reserve()
 
             booking = Booking(user, show, seats_to_book)
-            print(f"INFO: Booking {booking.booking_id} created in PENDING state.")
+            print(f"INFO: Booking {booking.booking_id} created (PENDING).")
             return booking
 
         finally:
-            # Phase 4: Release Locks
             for lock in reversed(acquired_locks):
                 lock.release()
 
     def confirm_payment_and_booking(self, booking: Booking):
-        """Simulate payment success and confirm the booking."""
-        # In a real system, verify payment status here
+        """Simulate payment and confirm the booking."""
         booking.confirm()
 
 # ==========================================
-# Main Execution
+# Main Execution / Demo
 # ==========================================
 
 if __name__ == "__main__":
     print("--- BookMyShow System Design Demo ---")
 
-    bms = BMSService.get_instance()
+    bms = BMSService()
 
-    # 1. Setup Data
+    # 1. Setup
     m1 = Movie("M1", "Inception", 148)
     bms.add_movie(m1)
 
@@ -323,13 +369,10 @@ if __name__ == "__main__":
 
     # 2. Search
     print("[User] Searching movies in Bangalore...")
-    movies_found = bms.get_movies_by_city("Bangalore")
-    print(f"INFO: Movies found: {movies_found}")
-
-    # 3. View Seats
+    print(f"INFO: Movies found: {bms.get_movies_by_city('Bangalore')}")
     show1.print_available_seats()
 
-    # 4. Concurrent Booking Simulation
+    # 3. Concurrent Booking Simulation
     user_a = User("U1", "Alice")
     user_b = User("U2", "Bob")
 
@@ -351,12 +394,10 @@ if __name__ == "__main__":
 
     t_alice = threading.Thread(target=alice_task)
     t_bob = threading.Thread(target=bob_task)
-
     t_alice.start()
     t_bob.start()
-
     t_alice.join()
     t_bob.join()
 
-    # 5. Final State
+    # 4. Final State
     show1.print_available_seats()

@@ -1,3 +1,95 @@
+# fmt: off
+# ==============================================================================
+#  VENDING MACHINE SYSTEM — ASCII CLASS DIAGRAM
+# ==============================================================================
+#
+#  ┌──────────────────────────────────────────────────────────────────────────┐
+#  │              VENDING MACHINE SYSTEM  (State Pattern)                     │
+#  └──────────────────────────────────────────────────────────────────────────┘
+#
+#  ┌─────────────────────────────────────────────────────────────┐
+#  │                   VendingMachine  (Context)                  │
+#  ├─────────────────────────────────────────────────────────────┤
+#  │ + inventory: Inventory                                       │
+#  │ + state: VendingMachineState  ← current state               │
+#  │ + current_balance: Decimal                                   │
+#  │ + selected_product: Optional[Product]                        │
+#  ├─────────────────────────────────────────────────────────────┤
+#  │ + set_state(state)                                           │
+#  │ + select_product(code)   → delegates to state               │
+#  │ + insert_coin(coin)      → delegates to state               │
+#  │ + insert_note(note)      → delegates to state               │
+#  │ + dispense()             → delegates to state               │
+#  │ + abort()                → delegates to state               │
+#  └──────────────────────────────┬──────────────────────────────┘
+#                                 │ 1
+#                                 ▼
+#  ┌─────────────────────────────────────────────────────────────┐
+#  │              VendingMachineState  (ABC)                      │
+#  ├─────────────────────────────────────────────────────────────┤
+#  │ + select_product(machine, code)                              │
+#  │ + insert_coin(machine, coin)                                 │
+#  │ + insert_note(machine, note)                                 │
+#  │ + dispense(machine)                                          │
+#  │ + abort(machine)                                             │
+#  └──────────┬──────────────────────────────────────────────────┘
+#             │
+#    ┌────────┼──────────────┐
+#    ▼        ▼              ▼
+#  ┌──────────────┐ ┌──────────────┐ ┌──────────────────────┐
+#  │  IdleState   │ │  ReadyState  │ │   DispenseState      │
+#  ├──────────────┤ ├──────────────┤ ├──────────────────────┤
+#  │ Waits for    │ │ Waits for    │ │ Validates payment,   │
+#  │ product      │ │ payment      │ │ dispenses product,   │
+#  │ selection    │ │ (coins/notes)│ │ returns change       │
+#  │              │ │              │ │                      │
+#  │ ─────────────│ │─────────────-│ │ → transitions back   │
+#  │ → ReadyState │ │ → Dispense   │ │   to IdleState       │
+#  │ on selection │ │   if enough  │ │                      │
+#  └──────────────┘ └──────────────┘ └──────────────────────┘
+#
+#  ┌──────────────────────────────────┐
+#  │           Inventory              │
+#  ├──────────────────────────────────┤
+#  │ + products: Dict[code, Product]  │
+#  │ - _lock: Lock                    │
+#  ├──────────────────────────────────┤
+#  │ + add_product()                  │
+#  │ + get_product(code)              │
+#  │ + is_available(code): bool       │
+#  │ + decrement(code)                │
+#  └──────────────────────────────────┘
+#
+#  ┌──────────────────────────────────┐
+#  │            Product               │
+#  ├──────────────────────────────────┤
+#  │ + code: str                      │
+#  │ + name: str                      │
+#  │ + price: Decimal                 │
+#  │ + quantity: int                  │
+#  └──────────────────────────────────┘
+#
+#  ┌───────────────┐   ┌──────────────────┐
+#  │   Coin (Enum) │   │   Note (Enum)    │
+#  ├───────────────┤   ├──────────────────┤
+#  │ PENNY=0.01    │   │ ONE=1.00         │
+#  │ NICKEL=0.05   │   │ FIVE=5.00        │
+#  │ DIME=0.10     │   │ TEN=10.00        │
+#  │ QUARTER=0.25  │   │ TWENTY=20.00     │
+#  └───────────────┘   └──────────────────┘
+#
+#  STATE TRANSITIONS:
+#  IDLE ──(select_product)──> READY ──(enough payment)──> DISPENSE ──> IDLE
+#  READY ──(abort)──────────────────────────────────────────────────> IDLE
+#  Any state ──(out_of_stock)──────────────────────────────────────> IDLE
+#
+#  RELATIONSHIPS:
+#  VendingMachine ──1──> Inventory               (owns inventory)
+#  VendingMachine ──1──> VendingMachineState     (current state, changes at runtime)
+#  Inventory ──*──> Product                      (catalog of items)
+#  IdleState / ReadyState / DispenseState ──▷── VendingMachineState (implements)
+# ==============================================================================
+# fmt: on
 import threading
 from abc import ABC, abstractmethod
 from decimal import Decimal

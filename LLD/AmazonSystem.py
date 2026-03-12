@@ -1,3 +1,79 @@
+# fmt: off
+# ==============================================================================
+#  AMAZON SYSTEM — ASCII CLASS DIAGRAM
+# ==============================================================================
+#
+#  ┌──────────────────────────────────────────────────────────────────────────┐
+#  │                        AMAZON SYSTEM (e-commerce)                        │
+#  └──────────────────────────────────────────────────────────────────────────┘
+#
+#  ┌──────────────────────────────┐    ┌─────────────────────────────────┐
+#  │          Catalog             │    │           Account (ABC)         │
+#  │      (Singleton)             │    ├─────────────────────────────────┤
+#  ├──────────────────────────────┤    │ + username: str                 │
+#  │ + _instance: Catalog         │    │ + email: str                    │
+#  │ + products: Dict[id,Product] │    │ + address: str                  │
+#  ├──────────────────────────────┤    └────────────┬────────────────────┘
+#  │ + get_instance(): Catalog    │                 │
+#  │ + add_product(product)       │        ┌────────┴────────┐
+#  │ + search(query): List[Prod]  │        │                 │
+#  └──────────────────────────────┘        ▼                 ▼
+#      ← implements SearchService →  ┌──────────┐     ┌───────────┐
+#                                    │ Customer │     │   Admin   │
+#  ┌──────────────────────────────┐  ├──────────┤     ├───────────┤
+#  │          Product             │  │ + cart:  │     │ + add_    │
+#  ├──────────────────────────────┤  │  Shopping│     │  product()│
+#  │ + product_id: str            │  │  Cart    │     └───────────┘
+#  │ + name: str                  │  │ + orders │
+#  │ + description: str           │  │   : List │
+#  │ + price: float               │  ├──────────┤
+#  │ + category: str              │  │+add_order│
+#  ├──────────────────────────────┤  └────┬─────┘
+#  │ Builder (inner class)        │       │ 1 owns
+#  │  + set_name() / set_price()  │       ▼
+#  │  + set_description()         │  ┌───────────────────────────────┐
+#  │  + build(): Product          │  │         ShoppingCart          │
+#  └──────────────────────────────┘  ├───────────────────────────────┤
+#                                    │ + items: List[Item]            │
+#  ┌──────────────────────────────┐  ├───────────────────────────────┤
+#  │          Order               │  │ + add_item(product, qty)       │
+#  ├──────────────────────────────┤  │ + remove_item(product_id)      │
+#  │ + order_id: str              │  │ + total(): float               │
+#  │ + items: List[Item]          │  └───────────────────────────────┘
+#  │ + total_amount: float        │
+#  │ + status: OrderStatus (enum) │  ┌──────────────────────────────┐
+#  ├──────────────────────────────┤  │     PaymentStrategy (ABC)    │
+#  │ + set_status()               │  ├──────────────────────────────┤
+#  └──────────────────────────────┘  │ + process(amount): bool      │
+#                                    └──────────────┬───────────────┘
+#  ┌──────────────────────────────┐                 │
+#  │            Item              │      ┌──────────┴──────────┐
+#  ├──────────────────────────────┤      ▼                     ▼
+#  │ + product: Product           │  ┌──────────────┐  ┌────────────────┐
+#  │ + quantity: int              │  │ CreditCard   │  │PayPalPayment   │
+#  │ + price: float               │  │ Payment      │  └────────────────┘
+#  └──────────────────────────────┘  └──────────────┘
+#
+#  ┌──────────────────────────────┐   ┌──────────────────────────────┐
+#  │  NotificationService         │   │     SearchService (ABC)      │
+#  ├──────────────────────────────┤   ├──────────────────────────────┤
+#  │ + send_email_notification()  │   │ + search(query): List[Prod]  │
+#  │ + send_shipment_update()     │   └──────────────────────────────┘
+#  │ + create_shipment()          │
+#  └──────────────────────────────┘
+#
+#  RELATIONSHIPS:
+#  Catalog (Singleton) ──*──> Product      (manages all products, SearchService)
+#  Customer ──▷── Account                  (inherits)
+#  Admin    ──▷── Account                  (inherits)
+#  Customer ──1──> ShoppingCart            (owns a cart)
+#  Customer ──*──> Order                   (places orders)
+#  Order ──*──> Item                       (line items per order)
+#  Item ──1──> Product                     (references product)
+#  Product uses Builder Pattern            (fluent construction)
+#  CreditCardPayment / PayPalPayment ──▷── PaymentStrategy (implements)
+# ==============================================================================
+# fmt: on
 from abc import ABC, abstractmethod
 from enum import Enum, auto
 from datetime import datetime

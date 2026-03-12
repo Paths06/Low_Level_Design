@@ -1,13 +1,83 @@
+# fmt: off
+# ==============================================================================
+#  ELEVATOR SYSTEM — ASCII CLASS DIAGRAM
+# ==============================================================================
+#
+#  ┌──────────────────────────────────────────────────────────────────────────┐
+#  │                        ELEVATOR SYSTEM (LOOK Algorithm)                  │
+#  └──────────────────────────────────────────────────────────────────────────┘
+#
+#  ┌─────────────────────────┐           ┌──────────────────────────────────┐
+#  │   ElevatorController    │  1    *   │             Elevator             │
+#  │       (Facade)          │──────────>├──────────────────────────────────┤
+#  ├─────────────────────────┤           │ + id: int                        │
+#  │ + elevators: List       │           │ + capacity: int                  │
+#  ├─────────────────────────┤           │ + current_floor: int             │
+#  │ + add_elevator()        │           │ + direction: Direction (enum)    │
+#  │ + handle_external_req() │           │ + up_queue: PriorityQueue        │
+#  │ + step()                │           │ + down_queue: PriorityQueue      │
+#  │ -_find_optimal_elevator()│          │ - _lock: Lock                    │
+#  └─────────────────────────┘           ├──────────────────────────────────┤
+#                                        │ + add_external_request()         │
+#  ┌──────────────────────┐              │ + add_internal_request()         │
+#  │  Request (ABC)       │              │ + move()    ← LOOK Algorithm     │
+#  ├──────────────────────┤              │ + is_idle(): bool                │
+#  │ + target_floor: int  │              └──────────────────────────────────┘
+#  └──────────┬───────────┘
+#             │
+#      ┌──────┴───────┐
+#      │              │
+#      ▼              ▼
+#  ┌──────────┐  ┌────────────────────┐
+#  │ Internal │  │  ExternalRequest   │
+#  │ Request  │  ├────────────────────┤
+#  ├──────────┤  │ + direction:       │
+#  │ (panel)  │  │   Direction (enum) │
+#  └──────────┘  └────────────────────┘
+#
+#  ┌──────────────────────────────────┐
+#  │         PriorityQueue            │  ← Thread-safe wrapper
+#  ├──────────────────────────────────┤
+#  │ + _queue: List[int]              │
+#  │ + _reverse: bool (UP=min/DN=max) │
+#  │ + _items: Set[int] (dedup)       │
+#  │ - _lock: Lock                    │
+#  ├──────────────────────────────────┤
+#  │ + push(item)                     │
+#  │ + pop(): int                     │
+#  │ + peek(): int                    │
+#  │ + is_empty(): bool               │
+#  └──────────────────────────────────┘
+#
+#  ┌──────────────────────┐
+#  │    Direction (Enum)  │
+#  ├──────────────────────┤
+#  │  UP / DOWN / IDLE    │
+#  └──────────────────────┘
+#
+#  LOOK ALGORITHM (Disk Scheduling):
+#  - Moving UP: serve all up_queue floors in ascending order
+#  - When up_queue empty: switch to DOWN (serve descending)
+#  - When down_queue empty: switch to IDLE
+#  - External requests assigned to nearest elevator moving toward target
+#
+#  RELATIONSHIPS:
+#  ElevatorController ──*──> Elevator         (manages all elevators)
+#  Elevator ──2──> PriorityQueue              (up_queue + down_queue)
+#  ExternalRequest ──▷── Request              (inherits, adds direction)
+#  InternalRequest ──▷── Request              (inherits)
+#  ElevatorController processes ExternalRequest → dispatches to best Elevator
+# ==============================================================================
+# fmt: on
 import heapq
 import threading
-import uuid
 from abc import ABC, abstractmethod
 from enum import Enum
 from typing import List, Optional, Set
 
 """
 ==============================================================================================
-ELEVATOR SYSTEM LOW LEVEL DESIGN (PYTHON - PRODUCTION GRADE)
+ELEVATOR SYSTEM LOW LEVEL DESIGN (INTERVIEW OPTIMIZED)
 ==============================================================================================
 
 Key Requirements Implemented:
@@ -16,12 +86,11 @@ Key Requirements Implemented:
 3. Request Handling: External (Hall) and Internal (Panel).
 4. Optimization: LOOK Algorithm (Scan) for efficient movement.
 5. Concurrency: Thread-safe queues and synchronized state.
-6. Production Standards: Logging, type hints, docstrings.
 
 Design Patterns:
-1. Singleton: ElevatorController (Central Dispatcher).
-2. Strategy: DispatchStrategy (Implicit).
-3. State: ElevatorState (IDLE, MOVING, STOPPED).
+1. Facade: ElevatorController (Central Dispatcher).
+2. Strategy: DispatchStrategy (best elevator selection).
+3. State: ElevatorState (IDLE, MOVING, STOPPED) via Direction enum.
 
 Algorithm Used: LOOK (Scanning)
 - Elevator moves in current direction as long as there are requests.
@@ -30,8 +99,7 @@ Algorithm Used: LOOK (Scanning)
 Class Design Diagram:
 ---------------------
 [ElevatorController] "1" *-- "*" [Elevator]
-[ElevatorController] "1" *-- "1" [DispatchStrategy]
-[Elevator] "1" *-- "1" [RequestQueue]
+[Elevator] "1" *-- "2" [PriorityQueue] (up/down)
 [Request] <|-- [InternalRequest]
 [Request] <|-- [ExternalRequest]
 [Elevator] ..> [Direction]
@@ -39,23 +107,21 @@ Class Design Diagram:
 
 Class Details:
 ---------------------
-1. ElevatorController (Singleton)
+1. ElevatorController (Facade)
    - Role: Central dispatcher. Handles External requests and assigns best Elevator.
-   - Attributes: elevators (List).
-   - Methods: requestElevator(), step() [Simulation ticker].
+   - Methods: handle_external_request(), step() [Simulation ticker].
 
 2. Elevator
    - Role: The physical car.
-   - Attributes: id, currentFloor, direction, capacity, requests (PriorityQueue).
-   - Methods: addRequest(), move(), openDoor().
+   - Attributes: id, currentFloor, direction, capacity.
+   - Methods: add_external_request(), add_internal_request(), move().
 
 3. Request (Abstract)
    - Role: Represents a button press.
-   - Attributes: floor, direction.
+   - Attributes: target_floor, direction.
 
-4. DispatchStrategy
-   - Role: Algorithm to assign external request to an elevator.
-   - Logic: Finds nearest elevator moving in same direction or Idle.
+4. PriorityQueue (Thread-safe wrapper)
+   - Role: Thread-safe min/max heap for LOOK algorithm.
 """
 
 # ==========================================
@@ -66,11 +132,6 @@ class Direction(Enum):
     UP = "UP"
     DOWN = "DOWN"
     IDLE = "IDLE"
-
-class State(Enum):
-    MOVING = "MOVING"
-    IDLE = "IDLE"
-    STOPPED = "STOPPED"
 
 class Request(ABC):
     def __init__(self, target_floor: int):
@@ -95,7 +156,7 @@ class PriorityQueue:
         self._queue: List[int] = []
         self._reverse = reverse
         self._lock = threading.Lock()
-        self._items: Set[int] = set() # To prevent duplicates
+        self._items: Set[int] = set()  # Prevent duplicates
 
     def push(self, item: int):
         with self._lock:
@@ -110,9 +171,9 @@ class PriorityQueue:
             if not self._queue:
                 return None
             val = heapq.heappop(self._queue)
-            actual_val = -val if self._reverse else val
-            self._items.remove(actual_val)
-            return actual_val
+            actual = -val if self._reverse else val
+            self._items.remove(actual)
+            return actual
 
     def peek(self) -> Optional[int]:
         with self._lock:
@@ -130,22 +191,20 @@ class PriorityQueue:
 # ==========================================
 
 class Elevator:
-    """Represents an individual elevator car."""
+    """Represents an individual elevator car using the LOOK algorithm."""
     def __init__(self, elevator_id: int, capacity: int):
         self.id = elevator_id
         self.capacity = capacity
         self.current_floor = 0
         self.direction = Direction.IDLE
-        self.state = State.IDLE
-        
         # LOOK Algorithm: min-heap for UP, max-heap for DOWN
         self.up_queue = PriorityQueue(reverse=False)
         self.down_queue = PriorityQueue(reverse=True)
-        self._state_lock = threading.Lock()
+        self._lock = threading.Lock()
 
     def add_external_request(self, req: ExternalRequest):
         """Handle request from outside the elevator."""
-        with self._state_lock:
+        with self._lock:
             if req.target_floor > self.current_floor:
                 self.up_queue.push(req.target_floor)
                 if self.direction == Direction.IDLE:
@@ -154,11 +213,11 @@ class Elevator:
                 self.down_queue.push(req.target_floor)
                 if self.direction == Direction.IDLE:
                     self.direction = Direction.DOWN
-            print(f"DEBUG: [Elevator {self.id}] External request added: {req.target_floor} {req.direction.name}")
+            print(f"INFO: [Elevator {self.id}] External request: Floor {req.target_floor} {req.direction.name}")
 
     def add_internal_request(self, floor: int):
         """Handle request from inside the elevator panel."""
-        with self._state_lock:
+        with self._lock:
             if floor > self.current_floor:
                 self.up_queue.push(floor)
                 if self.direction == Direction.IDLE:
@@ -167,14 +226,13 @@ class Elevator:
                 self.down_queue.push(floor)
                 if self.direction == Direction.IDLE:
                     self.direction = Direction.DOWN
-            print(f"DEBUG: [Elevator {self.id}] Internal request added for floor {floor}")
+            print(f"INFO: [Elevator {self.id}] Internal request for floor {floor}")
 
     def move(self):
         """Simulate one floor of movement or door operation."""
-        with self._state_lock:
+        with self._lock:
             if self.direction == Direction.IDLE:
                 return
-
             if self.direction == Direction.UP:
                 self._process_up_queue()
             else:
@@ -182,12 +240,8 @@ class Elevator:
 
     def _process_up_queue(self):
         if self.up_queue.is_empty():
-            if not self.down_queue.is_empty():
-                self.direction = Direction.DOWN
-            else:
-                self.direction = Direction.IDLE
+            self.direction = Direction.DOWN if not self.down_queue.is_empty() else Direction.IDLE
             return
-
         next_stop = self.up_queue.peek()
         if self.current_floor == next_stop:
             self.up_queue.pop()
@@ -198,12 +252,8 @@ class Elevator:
 
     def _process_down_queue(self):
         if self.down_queue.is_empty():
-            if not self.up_queue.is_empty():
-                self.direction = Direction.UP
-            else:
-                self.direction = Direction.IDLE
+            self.direction = Direction.UP if not self.up_queue.is_empty() else Direction.IDLE
             return
-
         next_stop = self.down_queue.peek()
         if self.current_floor == next_stop:
             self.down_queue.pop()
@@ -216,100 +266,69 @@ class Elevator:
         return self.direction == Direction.IDLE
 
 # ==========================================
-# Controller (Singleton)
+# Controller (Facade)
 # ==========================================
 
 class ElevatorController:
-    """Central manager for dispatching elevators (Singleton)."""
-    _instance = None
-    _singleton_lock = threading.Lock()
-
-    def __new__(cls):
-        with cls._singleton_lock:
-            if cls._instance is None:
-                cls._instance = super(ElevatorController, cls).__new__(cls)
-                cls._instance._initialized = False
-            return cls._instance
-
+    """Central manager for dispatching elevators."""
     def __init__(self):
-        if self._initialized:
-            return
         self.elevators: List[Elevator] = []
-        self._initialized = True
         print("INFO: ElevatorController initialized.")
-
-    @classmethod
-    def get_instance(cls):
-        return cls()
 
     def add_elevator(self, e: Elevator):
         self.elevators.append(e)
 
     def handle_external_request(self, floor: int, direction: Direction):
         """Assign best elevator for the hall request."""
-        best_elevator = self._find_optimal_elevator(floor, direction)
-        print(f"INFO: Assigning [Floor {floor} {direction.name}] to Elevator {best_elevator.id}")
-        best_elevator.add_external_request(ExternalRequest(floor, direction))
+        best = self._find_optimal_elevator(floor, direction)
+        print(f"INFO: Assigning [Floor {floor} {direction.name}] to Elevator {best.id}")
+        best.add_external_request(ExternalRequest(floor, direction))
 
     def _find_optimal_elevator(self, target_floor: int, direction: Direction) -> Elevator:
-        """Heuristic to find the best elevator based on proximity and direction."""
+        """Heuristic: find nearest elevator moving toward the target or idle."""
         best = None
         min_distance = float('inf')
-
         for e in self.elevators:
             dist = abs(e.current_floor - target_floor)
-            
-            # If moving towards target or Idle
-            moving_towards = False
-            if e.direction == Direction.UP and e.current_floor <= target_floor:
-                moving_towards = True
-            elif e.direction == Direction.DOWN and e.current_floor >= target_floor:
-                moving_towards = True
-            elif e.is_idle():
-                moving_towards = True
-
-            if moving_towards:
-                if dist < min_distance:
-                    min_distance = dist
-                    best = e
-        
-        # Fallback to first if none meet criteria
+            moving_towards = (
+                (e.direction == Direction.UP and e.current_floor <= target_floor) or
+                (e.direction == Direction.DOWN and e.current_floor >= target_floor) or
+                e.is_idle()
+            )
+            if moving_towards and dist < min_distance:
+                min_distance = dist
+                best = e
         return best if best else self.elevators[0]
 
     def step(self):
-        """Ticker to simulate system movement."""
+        """Ticker to simulate one step of system movement."""
         for e in self.elevators:
             e.move()
 
 # ==========================================
-# Main Execution
+# Main Execution / Demo
 # ==========================================
 
 if __name__ == "__main__":
     print("--- Starting Elevator System Demo ---")
 
-    controller = ElevatorController.get_instance()
-    
-    # 1. Setup
+    controller = ElevatorController()
     e1 = Elevator(1, 10)
     e2 = Elevator(2, 10)
     controller.add_elevator(e1)
     controller.add_elevator(e2)
 
-    # 2. Hall Requests
+    # Hall Requests
     print("[User] Floor 1 requests UP")
     controller.handle_external_request(1, Direction.UP)
-    
     print("[User] Floor 5 requests DOWN")
     controller.handle_external_request(5, Direction.DOWN)
 
-    # 3. Simulation Ticks
+    # Simulation Ticks
     print("\n--- Simulation Steps ---")
     for i in range(8):
-        print(f"DEBUG: Tick {i}")
+        print(f"[Tick {i}]")
         controller.step()
-        
-        # Simulate internal panel press
         if i == 2:
-            print("  [Sim] User entering Elevator 1 and pressing Floor 4")
+            print("  [Sim] User inside Elevator 1 presses Floor 4")
             e1.add_internal_request(4)

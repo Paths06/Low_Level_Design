@@ -1,12 +1,89 @@
+# fmt: off
+# ==============================================================================
+#  CRICINFO SYSTEM — ASCII CLASS DIAGRAM
+# ==============================================================================
+#
+#  ┌──────────────────────────────────────────────────────────────────────────┐
+#  │                      CRICINFO SYSTEM                                     │
+#  └──────────────────────────────────────────────────────────────────────────┘
+#
+#  ┌────────────────────┐    ┌─────────────────────────────────────────────┐
+#  │  CricInfoManager   │    │                   Match                     │
+#  │     (Facade)       │    ├─────────────────────────────────────────────┤
+#  ├────────────────────┤    │ + match_id: str                             │
+#  │ + matches: Dict    │    │ + team1, team2: Team                        │
+#  │ + teams: Dict      │───>│ + status: MatchStatus (enum)                │
+#  │ + players: Dict    │ *  │ + scorecard: Scorecard                      │
+#  ├────────────────────┤    │ + observers: List[MatchObserver]            │
+#  │ + add_match()      │    │ - _lock: Lock                               │
+#  │ + add_team()       │    ├─────────────────────────────────────────────┤
+#  │ + get_live_matches()│   │ + start_match()                             │
+#  │ + search_teams()   │    │ + add_observer()  ← Observer Pattern        │
+#  └────────────────────┘    │ + notify_observers()                        │
+#                            │ + update_score()                            │
+#  ┌────────────────────┐    └──────────────┬──────────────────────────────┘
+#  │  MatchObserver     │                   │ 1
+#  │  (ABC/Interface)   │◄──────────────────┤ has
+#  ├────────────────────┤    notified        │
+#  │ + update(match,    │                   ▼
+#  │   commentary)      │    ┌─────────────────────────────────────────────┐
+#  └────────┬───────────┘    │                Scorecard                   │
+#           │                ├─────────────────────────────────────────────┤
+#           ▼                │ + innings_list: List[Innings]               │
+#  ┌────────────────────┐    │ + commentary_list: List[str]                │
+#  │ LiveMatchDisplay   │    │ + current_innings: Innings                  │
+#  ├────────────────────┤    ├─────────────────────────────────────────────┤
+#  │ + user_id: str     │    │ + start_innings()                           │
+#  │ + update()         │    │ + record_ball()                             │
+#  └────────────────────┘    └──────────────┬──────────────────────────────┘
+#                                           │ 1..*
+#  ┌──────────────┐                         ▼
+#  │     Team     │        ┌────────────────────────────────────────────┐
+#  ├──────────────┤        │                 Innings                   │
+#  │ + id: str    │        ├────────────────────────────────────────────┤
+#  │ + name: str  │───────>│ + id: int                                  │
+#  │ + players[]  │  bats  │ + batting_team: Team                       │
+#  ├──────────────┤        │ + batting_stats: Dict[str, BattingStats]   │
+#  │ + add_player()│       │ + bowling_stats: Dict[str, BowlingStats]   │
+#  └──────┬───────┘        │ + total_runs, total_wickets: int           │
+#         │ 1..*           ├────────────────────────────────────────────┤
+#         ▼                │ + update(batsman, bowler, runs, wicket)    │
+#  ┌──────────────┐        └──────────┬─────────────────────┬───────────┘
+#  │    Player    │                   │ *                   │ *
+#  ├──────────────┤                   ▼                     ▼
+#  │ + id: str    │        ┌─────────────────┐  ┌──────────────────────┐
+#  │ + name: str  │        │  BattingStats   │  │    BowlingStats      │
+#  │ + role: str  │        ├─────────────────┤  ├──────────────────────┤
+#  └──────────────┘        │ + player        │  │ + player             │
+#                          │ + runs, balls   │  │ + overs, wickets     │
+#                          │ + fours, sixes  │  │ + runs_conceded      │
+#                          │ + is_out        │  ├──────────────────────┤
+#                          ├─────────────────┤  │ + add_ball()         │
+#                          │ + add_runs()    │  └──────────────────────┘
+#                          │ + set_out()     │
+#                          └─────────────────┘
+#
+#  RELATIONSHIPS:
+#  CricInfoManager ──*──> Match          (manages many matches)
+#  Match           ──2──> Team           (2 teams per match)
+#  Match           ──1──> Scorecard      (owns a scorecard)
+#  Match           ──*──> MatchObserver  (observer list, notified on events)
+#  Scorecard       ──*──> Innings        (multiple innings per match)
+#  Innings         ──*──> BattingStats   (per batsman in innings)
+#  Innings         ──*──> BowlingStats   (per bowler in innings)
+#  Team            ──*──> Player         (squad)
+#  LiveMatchDisplay ──▷── MatchObserver  (implements observer)
+# ==============================================================================
+# fmt: on
 import threading
 from abc import ABC, abstractmethod
 from datetime import datetime
 from enum import Enum
-from typing import List, Dict, Set, Optional
+from typing import List, Dict, Optional
 
 """
 ==============================================================================================
-CRICINFO (CRICKET INFORMATION SYSTEM) LOW LEVEL DESIGN (PYTHON - PRODUCTION GRADE)
+CRICINFO (CRICKET INFORMATION SYSTEM) LOW LEVEL DESIGN (INTERVIEW OPTIMIZED)
 ==============================================================================================
 
 Key Requirements:
@@ -16,9 +93,8 @@ Key Requirements:
 4. Statistics: Detailed scorecards and player stats.
 
 Design Patterns:
-1. Singleton: CricInfoManager (Facade).
-2. Observer: For notifying subscribers of live match events.
-3. Production Standards: Logging, thread-safety, type hints, and docstrings.
+1. Facade: CricInfoManager (Central Controller).
+2. Observer: Notifying subscribers of live match events.
 
 Class Design Diagram:
 ---------------------
@@ -36,19 +112,19 @@ Class Design Diagram:
 
 Class Details:
 ---------------------
-1. CricInfoSystem (Singleton)
-   - Role: Main controller. Finds matches, players.
-   - Methods: searchMatches(), getLiveMatches().
+1. CricInfoManager (Facade)
+   - Role: Main controller. Manages matches and teams.
+   - Methods: searchMatches(), getLiveMatches(), searchTeams().
 
 2. Match
-   - Role: Represents a single game.
+   - Role: Represents a single game with observers.
    - Attributes: id, teams, status (LIVE, COMPLETED), scorecard.
-   - Methods: updateScore(), addCommentary() [Notify Observers].
+   - Methods: updateScore(), notifyObservers().
 
 3. Scorecard
    - Role: Container for innings and stats.
 
-4. Observer (Interface)
+4. MatchObserver (Interface)
    - Role: Real-time update receiver.
    - Impl: LiveMatchDisplay.
 """
@@ -77,7 +153,7 @@ class LiveMatchDisplay(MatchObserver):
     """Implementation of MatchObserver for user displays."""
     def __init__(self, user_id: str):
         self.user_id = user_id
-    
+
     def update(self, match: 'Match', commentary: str):
         print(f"INFO: >> [Notification to {self.user_id}] {match.get_teams()}: {commentary}")
 
@@ -151,30 +227,20 @@ class Innings:
 
     def update(self, batsman: Player, bowler: Player, runs: int, is_wicket: bool):
         self.total_runs += runs
-        
-        # Update Batsman
-        bs = self.batting_stats.get(batsman.id)
-        if not bs:
-            bs = BattingStats(batsman)
-            self.batting_stats[batsman.id] = bs
-        
+
+        bs = self.batting_stats.setdefault(batsman.id, BattingStats(batsman))
         if is_wicket:
             bs.set_out()
             self.total_wickets += 1
         else:
             bs.add_runs(runs)
-        
-        # Update Bowler
-        bo = self.bowling_stats.get(bowler.id)
-        if not bo:
-            bo = BowlingStats(bowler)
-            self.bowling_stats[bowler.id] = bo
+
+        bo = self.bowling_stats.setdefault(bowler.id, BowlingStats(bowler))
         bo.add_ball(runs, is_wicket)
 
     def __str__(self):
         lines = [f"\nInnings {self.id}: {self.batting_team.name}",
-                 f"Total: {self.total_runs}/{self.total_wickets}",
-                 "Batting:"]
+                 f"Total: {self.total_runs}/{self.total_wickets}", "Batting:"]
         for bs in self.batting_stats.values():
             if bs.balls_faced > 0 or bs.runs > 0:
                 lines.append(str(bs))
@@ -220,7 +286,6 @@ class Match:
         self._lock = threading.Lock()
 
     def start_match(self):
-        """Initializes the match state."""
         self.status = MatchStatus.LIVE
         innings = Innings(1, self.team1)
         self.scorecard.start_innings(innings)
@@ -239,47 +304,26 @@ class Match:
                 o.update(self, commentary)
 
     def update_score(self, runs: int, is_wicket: bool, over_ball: str, comm_text: str):
-        """Update scores and notify observers."""
         if not self.current_striker or not self.current_bowler:
             return
-        
         self.scorecard.record_ball(self.current_striker, self.current_bowler, runs, is_wicket, f"{over_ball}: {comm_text}")
-        
         if self.scorecard.current_innings:
             inns = self.scorecard.current_innings
-            score_info = f" (Score: {inns.total_runs}/{inns.total_wickets})"
-            self.notify_observers(comm_text + score_info)
+            self.notify_observers(f"{comm_text} (Score: {inns.total_runs}/{inns.total_wickets})")
 
     def get_teams(self) -> str:
         return f"{self.team1.name} vs {self.team2.name}"
 
 # ==========================================
-# Service Manager (Singleton)
+# Service Manager (Facade)
 # ==========================================
 
 class CricInfoManager:
-    _instance = None
-    _singleton_lock = threading.Lock()
-
-    def __new__(cls):
-        with cls._singleton_lock:
-            if cls._instance is None:
-                cls._instance = super(CricInfoManager, cls).__new__(cls)
-                cls._instance._initialized = False
-            return cls._instance
-
     def __init__(self):
-        if self._initialized:
-            return
         self.matches: Dict[str, Match] = {}
         self.teams: Dict[str, Team] = {}
         self.players: Dict[str, Player] = {}
-        self._initialized = True
         print("INFO: CricInfo Manager initialized.")
-
-    @classmethod
-    def get_instance(cls):
-        return cls()
 
     def add_match(self, match: Match):
         self.matches[match.match_id] = match
@@ -296,26 +340,25 @@ class CricInfoManager:
         return [t for t in self.teams.values() if name.lower() in t.name.lower()]
 
 # ==========================================
-# Main Execution
+# Main Execution / Demo
 # ==========================================
 
 if __name__ == "__main__":
     print("--- Starting CricInfo System Demo ---")
-    
-    manager = CricInfoManager.get_instance()
+
+    manager = CricInfoManager()
 
     # 1. Setup Data
     p1 = Player("P1", "Virat Kohli", "Batsman")
     p2 = Player("P2", "Jasprit Bumrah", "Bowler")
     p3 = Player("P3", "Steve Smith", "Batsman")
-    
+
     india = Team("IND", "India")
     india.add_player(p1)
     india.add_player(p2)
-    
     aus = Team("AUS", "Australia")
     aus.add_player(p3)
-    
+
     manager.add_team(india)
     manager.add_team(aus)
 
@@ -323,22 +366,20 @@ if __name__ == "__main__":
     manager.add_match(match)
 
     # 2. Subscribe Users
-    user_display = LiveMatchDisplay("Fan_1")
-    match.add_observer(user_display)
+    match.add_observer(LiveMatchDisplay("Fan_1"))
 
     # 3. Simulation
     match.start_match()
-    
     match.update_score(0, False, "0.1", "Bumrah to Kohli, no run")
     match.update_score(4, False, "0.2", "Bumrah to Kohli, FOUR runs!")
     match.update_score(6, False, "0.3", "Bumrah to Kohli, SIX runs!")
     match.update_score(0, True, "0.4", "Bumrah to Kohli, OUT! Caught by Smith")
-    
+
     # 4. Search
     print("[System] Searching for 'India'...")
     found_teams = manager.search_teams("India")
     print(f"INFO: Found Teams: {[t.name for t in found_teams]}")
-    
+
     # 5. Result Card
     print("\n[System] Final Match Scorecard Summary:")
     print(match.scorecard)

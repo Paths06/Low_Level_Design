@@ -1,25 +1,98 @@
+# fmt: off
+# ==============================================================================
+#  MUSIC STREAMING SYSTEM — ASCII CLASS DIAGRAM
+# ==============================================================================
+#
+#  ┌──────────────────────────────────────────────────────────────────────────┐
+#  │                    MUSIC STREAMING SYSTEM (Spotify-like)                 │
+#  └──────────────────────────────────────────────────────────────────────────┘
+#
+#  ┌─────────────────────────┐    ┌─────────────────────────────────────┐
+#  │    StreamingService     │    │             MusicCatalog            │
+#  │       (Facade)          │    ├─────────────────────────────────────┤
+#  ├─────────────────────────┤    │ + artists: Dict[str, Artist]        │
+#  │ + catalog: MusicCatalog │───>│ + songs: Dict[str, Song]            │
+#  │ + users: Dict           │    ├─────────────────────────────────────┤
+#  ├─────────────────────────┤    │ + add_artist()                      │
+#  │ + register_user()       │    │ + search(query): List[Song]         │
+#  │ + play_song()           │    └──────────────────────────────────────┘
+#  │ + get_recommendations() │
+#  └─────────────────────────┘    ┌─────────────────────────────────────┐
+#                                 │               Artist                │
+#  ┌─────────────────────┐        ├─────────────────────────────────────┤
+#  │       User          │        │ + id: str                           │
+#  ├─────────────────────┤        │ + name: str                         │
+#  │ + id: str           │        │ + songs: List[Song]                 │
+#  │ + name: str         │        ├─────────────────────────────────────┤
+#  │ + player: Player    │        │ + add_song()                        │
+#  │ + playlists: Dict   │        └──────────────────────────────────────┘
+#  └────────┬────────────┘
+#           │ 1 owns              ┌─────────────────────────────────────┐
+#           ▼                    │                Song                 │
+#  ┌─────────────────────┐       ├─────────────────────────────────────┤
+#  │       Player        │       │ + id: str                           │
+#  ├─────────────────────┤       │ + title: str                        │
+#  │ + current_song      │       │ + artist: Artist                    │
+#  │ + history: List[]   │       │ + duration_secs: int                │
+#  ├─────────────────────┤       └──────────────────────────────────────┘
+#  │ + play(song)        │
+#  │ + pause() / stop()  │
+#  └─────────────────────┘    ┌─────────────────────────────────────┐
+#                             │              Playlist               │
+#  ┌───────────────────────┐  ├─────────────────────────────────────┤
+#  │ RecommendationStrategy│  │ + id: str                           │
+#  │    (ABC/Interface)    │  │ + name: str                         │
+#  ├───────────────────────┤  │ + songs: List[Song]                 │
+#  │ + recommend(user,     │  ├─────────────────────────────────────┤
+#  │   catalog): List[Song]│  │ + add_song()                        │
+#  └──────────┬────────────┘  │ + remove_song()                     │
+#             │               └──────────────────────────────────────┘
+#      ┌──────┴───────┐
+#      │              │
+#      ▼              ▼
+#  ┌──────────────┐  ┌─────────────────────────────────┐
+#  │HistoryBased  │  │    GenreBased (extendable)      │
+#  │Recommendation│  │    Recommendation               │
+#  ├──────────────┤  └─────────────────────────────────┘
+#  │ returns songs│
+#  │ from unheard │
+#  │ artists      │
+#  └──────────────┘
+#
+#  RELATIONSHIPS:
+#  StreamingService ──1──> MusicCatalog          (central song/artist registry)
+#  StreamingService ──*──> User                  (manages registered users)
+#  User ──1──> Player                            (owns a media player)
+#  User ──*──> Playlist                          (creates playlists)
+#  MusicCatalog ──*──> Artist                    (indexes artists)
+#  Artist ──*──> Song                            (owns songs)
+#  Playlist ──*──> Song                          (references songs)
+#  Player.history ──*──> Song                    (play history)
+#  StreamingService uses RecommendationStrategy  (Strategy Pattern)
+#  HistoryBasedRecommendation ──▷── RecommendationStrategy (implements)
+# ==============================================================================
+# fmt: on
 import threading
 from abc import ABC, abstractmethod
 from enum import Enum
-from typing import List, Dict, Set, Optional
+from typing import List, Dict, Optional
 
 """
 ==============================================================================================
-MUSIC STREAMING SERVICE (SPOTIFY) LOW LEVEL DESIGN (PYTHON - PRODUCTION GRADE)
+MUSIC STREAMING SERVICE (SPOTIFY) LOW LEVEL DESIGN (INTERVIEW OPTIMIZED)
 ==============================================================================================
 
 Key Features:
 1. Catalog Management: Songs, Albums, Artists.
-2. Playback: Player functionality (Play, Pause, queue).
-3. User Interaction: Playlists, Following Artists.
+2. Playback: Player functionality (Play, Pause, Stop).
+3. User Interaction: Playlists, Listening History.
 4. Recommendation: Strategy-based recommendations (e.g., Genre-based).
-5. Search: Find content by name or genre.
-6. Production Standards: Logging, type hints, docstrings, thread-safety.
+5. Search: Find songs by name.
 
 Design Patterns:
-1. Singleton: StreamingService (Facade).
+1. Facade: StreamingService (Central Controller).
 2. Strategy: RecommendationStrategy.
-3. State: Handled via Player status.
+3. State: Handled via PlayerState enum.
 
 Class Design Diagram:
 ---------------------
@@ -34,19 +107,21 @@ Class Design Diagram:
 
 Class Details:
 ---------------------
-1. StreamingService
+1. StreamingService (Facade)
    - Role: Facade.
-   - Methods: search(), recommend().
+   - Methods: registerUser(), search(), getRecommendations().
 
 2. Player
    - Role: Controls audio playback.
-   - Attributes: currentSong, queue, state.
+   - Attributes: currentSong, state (PlayerState).
+   - Methods: play(), pause(), stop().
 
 3. Catalog
    - Role: Index of all music.
+   - Methods: addArtist(), searchSongs().
 
 4. Song
-   - Attributes: id, title, duration, genre.
+   - Attributes: id, title, genre, duration.
 """
 
 # ==========================================
@@ -74,7 +149,6 @@ class Song:
         return f"Song({self.title})"
 
 class Album:
-    """Represents a collection of songs by an artist."""
     def __init__(self, album_id: str, title: str):
         self.id = album_id
         self.title = title
@@ -84,7 +158,6 @@ class Album:
         self.songs.append(song)
 
 class Artist:
-    """Represents a music creator."""
     def __init__(self, artist_id: str, name: str):
         self.id = artist_id
         self.name = name
@@ -101,7 +174,7 @@ class Playlist:
 
     def add_song(self, song: Song):
         self.songs.append(song)
-        print(f"DEBUG: Added {song.title} to playlist {self.name}")
+        print(f"INFO: Added '{song.title}' to playlist '{self.name}'")
 
 # ==========================================
 # Player Component
@@ -113,12 +186,10 @@ class Player:
         self.user_name = user_name
         self.current_song: Optional[Song] = None
         self.state = PlayerState.STOPPED
-        self.seek_position = 0
 
     def play(self, song: Song):
         self.current_song = song
         self.state = PlayerState.PLAYING
-        self.seek_position = 0
         print(f"INFO: [{self.user_name}] Playing: {song.title} ({song.duration_sec}s)")
 
     def pause(self):
@@ -162,15 +233,10 @@ class GenreRecommendation(RecommendationStrategy):
     def recommend(self, user: User, catalog: 'Catalog') -> List[Song]:
         if not user.history:
             return []
-        
-        last_played = user.history[-1]
-        genre = last_played.genre
-        
-        # Simple Logic: Find all songs of same genre in catalog minus history
+        genre = user.history[-1].genre
         history_ids = {s.id for s in user.history}
-        recs = [s for s in catalog.songs.values() 
+        return [s for s in catalog.songs.values()
                 if s.genre.lower() == genre.lower() and s.id not in history_ids]
-        return recs
 
 # ==========================================
 # Catalog & Service
@@ -189,35 +255,18 @@ class Catalog:
             for album in artist.albums:
                 for song in album.songs:
                     self.songs[song.id] = song
-            print(f"DEBUG: Catalog updated with artist {artist.name}")
+            print(f"INFO: Catalog updated with artist {artist.name}")
 
     def search_songs(self, query: str) -> List[Song]:
         return [s for s in self.songs.values() if query.lower() in s.title.lower()]
 
 class StreamingService:
-    """Facade for the Music Streaming System (Singleton)."""
-    _instance = None
-    _singleton_lock = threading.Lock()
-
-    def __new__(cls):
-        with cls._singleton_lock:
-            if cls._instance is None:
-                cls._instance = super(StreamingService, cls).__new__(cls)
-                cls._instance._initialized = False
-            return cls._instance
-
+    """Facade for the Music Streaming System."""
     def __init__(self):
-        if self._initialized:
-            return
         self.catalog = Catalog()
         self.users: Dict[str, User] = {}
         self.rec_strategy: RecommendationStrategy = GenreRecommendation()
-        self._initialized = True
-        print("INFO: StreamingService (Spotify Hook) initialized.")
-
-    @classmethod
-    def get_instance(cls):
-        return cls()
+        print("INFO: StreamingService initialized.")
 
     def register_user(self, user: User):
         self.users[user.id] = user
@@ -228,51 +277,49 @@ class StreamingService:
         return self.rec_strategy.recommend(user, self.catalog)
 
 # ==========================================
-# Main Execution
+# Main Execution / Demo
 # ==========================================
 
 if __name__ == "__main__":
     print("--- Starting Music Streaming Demo ---")
-    
-    spotify = StreamingService.get_instance()
+
+    spotify = StreamingService()
 
     # 1. Setup content
-    artist1 = Artist("A1", "The Weeknd")
     s1 = Song("S1", "Blinding Lights", "Pop", 200)
     s2 = Song("S2", "Save Your Tears", "Pop", 215)
     s3 = Song("S3", "Starboy", "Electronic", 230)
+    s4 = Song("S4", "Get Lucky", "Pop", 240)
+
     alb1 = Album("AL1", "After Hours")
     alb1.add_song(s1)
     alb1.add_song(s2)
+    artist1 = Artist("A1", "The Weeknd")
     artist1.add_album(alb1)
-    
-    artist2 = Artist("A2", "Daft Punk")
-    s4 = Song("S4", "Get Lucky", "Pop", 240)
+
     alb2 = Album("AL2", "Random Access Memories")
     alb2.add_song(s4)
+    artist2 = Artist("A2", "Daft Punk")
     artist2.add_album(alb2)
-    
+
     spotify.catalog.add_artist(artist1)
     spotify.catalog.add_artist(artist2)
 
-    # 2. Setup User
+    # 2. User Actions
     user1 = User("U1", "Saurabh")
     spotify.register_user(user1)
 
-    # 3. Simulate Interactions
     playlist = user1.create_playlist("Chill Vibes")
     playlist.add_song(s1)
-    
+
     print("[Action] User plays 'Blinding Lights'")
     user1.player.play(s1)
     user1.add_to_history(s1)
-    
-    print("[Action] User searches for 'Lucky'")
-    search_results = spotify.catalog.search_songs("Lucky")
-    if search_results:
-        print(f"INFO: Search Results: {search_results}")
 
-    # 4. Recommendations
-    # User1 has played a 'Pop' song, so expect more Pop (s2, s4)
-    recommendations = spotify.get_recommendations(user1)
-    print(f"INFO: Recommendations for {user1.name}: {recommendations}")
+    print("[Action] User searches for 'Lucky'")
+    results = spotify.catalog.search_songs("Lucky")
+    print(f"INFO: Search Results: {results}")
+
+    # Recommendations: user1 played Pop, so expect more Pop (s2, s4)
+    recs = spotify.get_recommendations(user1)
+    print(f"INFO: Recommendations for {user1.name}: {recs}")

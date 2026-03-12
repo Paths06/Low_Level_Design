@@ -1,15 +1,95 @@
+# fmt: off
+# ==============================================================================
+#  LOGGING FRAMEWORK — ASCII CLASS DIAGRAM
+# ==============================================================================
+#
+#  ┌──────────────────────────────────────────────────────────────────────────┐
+#  │                      CUSTOM LOGGING FRAMEWORK                            │
+#  └──────────────────────────────────────────────────────────────────────────┘
+#
+#  ┌───────────────────────────────────────────────────┐
+#  │              CustomLogger  (Singleton)             │
+#  ├───────────────────────────────────────────────────┤
+#  │ - _instance: CustomLogger                         │
+#  │ - _singleton_lock: Lock                           │
+#  │ + config: LoggerConfig                            │
+#  ├───────────────────────────────────────────────────┤
+#  │ + get_instance() -> CustomLogger  (class method)  │
+#  │ + log(level, message)                             │
+#  │ + debug(msg) / info(msg) / warning(msg)           │
+#  │ + error(msg) / fatal(msg)                         │
+#  └───────────────────────┬───────────────────────────┘
+#                          │ 1 owns
+#                          ▼
+#  ┌───────────────────────────────────────────────────┐
+#  │                  LoggerConfig                      │
+#  ├───────────────────────────────────────────────────┤
+#  │ + min_level: LogLevel (enum)                      │
+#  │ + appenders: List[LogAppender]                    │
+#  │ - _lock: Lock                                     │
+#  ├───────────────────────────────────────────────────┤
+#  │ + set_level(level)                                │
+#  │ + add_appender(appender)                          │
+#  └───────────────────────┬───────────────────────────┘
+#                          │ 1..*
+#                          ▼
+#  ┌───────────────────────────────────────────────────┐
+#  │              LogAppender  (ABC)                    │   ← Observer / Strategy
+#  ├───────────────────────────────────────────────────┤
+#  │ + append(message: LogMessage)                     │
+#  └───────────────────────┬───────────────────────────┘
+#                          │
+#          ┌───────────────┼───────────────┐
+#          ▼               ▼               ▼
+#  ┌───────────────┐ ┌───────────────┐ ┌──────────────────┐
+#  │ConsoleAppender│ │ FileAppender  │ │DatabaseAppender  │
+#  ├───────────────┤ ├───────────────┤ ├──────────────────┤
+#  │ + append()    │ │ + file_path   │ │ + db_url: str    │
+#  │ (prints to    │ │ - _lock: Lock │ │ + append()       │
+#  │  stdout)      │ │ + append()    │ │ (simulated SQL)  │
+#  └───────────────┘ └───────────────┘ └──────────────────┘
+#
+#  ┌───────────────────────────────┐
+#  │         LogMessage  (DTO)     │
+#  ├───────────────────────────────┤
+#  │ + level: LogLevel             │
+#  │ + content: str                │
+#  │ + timestamp: datetime         │
+#  ├───────────────────────────────┤
+#  │ + __str__(): str              │
+#  └───────────────────────────────┘
+#
+#  ┌───────────────────────────────┐
+#  │       LogLevel  (Enum)        │
+#  ├───────────────────────────────┤
+#  │  DEBUG=1 / INFO=2             │
+#  │  WARNING=3 / ERROR=4          │
+#  │  FATAL=5                      │
+#  └───────────────────────────────┘
+#
+#  NOTE: Singleton is INTENTIONAL here — Logger is a global shared resource.
+#        All modules in an application must share the SAME logger instance.
+#
+#  RELATIONSHIPS:
+#  CustomLogger  ──1──> LoggerConfig        (owns config)
+#  LoggerConfig  ──*──> LogAppender         (manages list of destinations)
+#  CustomLogger dispatches LogMessage to each LogAppender via LoggerConfig
+#  ConsoleAppender  ──▷── LogAppender       (implements)
+#  FileAppender     ──▷── LogAppender       (implements, thread-safe)
+#  DatabaseAppender ──▷── LogAppender       (implements, simulated)
+# ==============================================================================
+# fmt: on
 import threading
-import uuid
+import os
+import concurrent.futures
 from abc import ABC, abstractmethod
 from datetime import datetime
 from enum import Enum
-from typing import List, Dict, Optional
-import os
-import concurrent.futures
+from typing import List
 
 """
 ==============================================================================================
-LOGGING FRAMEWORK LOW LEVEL DESIGN (PYTHON - PRODUCTION GRADE)
+LOGGING FRAMEWORK LOW LEVEL DESIGN (INTERVIEW OPTIMIZED)
 ==============================================================================================
 
 Key Requirements:
@@ -17,14 +97,12 @@ Key Requirements:
 2. Log Format: Timestamp + Level + Message.
 3. Multiple Destinations: Console, File, Database (Simulated).
 4. Configuration: Set minimum log level and add destinations.
-5. Thread Safety: Handles concurrent logging via locks and concurrent.futures.
+5. Thread Safety: Handles concurrent logging via locks.
 6. Extensibility: Interface-based appenders.
 
 Design Patterns:
-1. Singleton: For the central 'Logger' instance.
-2. Observer / Strategy: 'LogAppender' interface for multiple output destinations.
-3. Chain of Responsibility: (Optional) Can be used for level-based filtering, 
-   but here handled via configuration.
+1. Singleton: Critical here - Logger is a global shared resource.
+2. Observer / Strategy: LogAppender interface for multiple output destinations.
 
 Class Design Diagram:
 ---------------------
@@ -40,8 +118,8 @@ Class Details:
 ---------------------
 1. Logger (Singleton)
    - Role: Central access point for logging.
-   - Attributes: config.
-   - Methods: log(), debug(), info(), error(), setConfig().
+   - Attributes: config (LoggerConfig).
+   - Methods: log(), debug(), info(), warning(), error(), fatal().
 
 2. LoggerConfig
    - Role: Holds configuration state.
@@ -50,11 +128,10 @@ Class Details:
 
 3. LogAppender (Interface)
    - Role: Abstraction for output destinations.
-   - Methods: append(LogMessage).
+   - Impls: ConsoleAppender, FileAppender, DatabaseAppender.
 
-4. ConsoleAppender / FileAppender
-   - Role: Concrete implementations.
-   - Logic: Writes formatted string to specific output (System.out, File).
+4. LogMessage (DTO)
+   - Attributes: level, content, timestamp.
 """
 
 # ==========================================
@@ -81,10 +158,11 @@ class LogMessage:
         self.timestamp = datetime.now()
 
     def __str__(self):
-        return f"[{self.timestamp.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}] [{self.level.name}] {self.content}"
+        ts = self.timestamp.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
+        return f"[{ts}] [{self.level.name}] {self.content}"
 
 # ==========================================
-# Appenders (Observer / Strategy)
+# Appenders (Strategy / Observer)
 # ==========================================
 
 class LogAppender(ABC):
@@ -118,7 +196,6 @@ class DatabaseAppender(LogAppender):
         self.db_url = db_url
 
     def append(self, message: LogMessage):
-        # Simulated DB Insertion
         print(f"DB ({self.db_url}): INSERT INTO logs VALUES ('{message.level.name}', '{message.content}')")
 
 # ==========================================
@@ -145,7 +222,11 @@ class LoggerConfig:
 # ==========================================
 
 class CustomLogger:
-    """Central access point for logging (Singleton)."""
+    """
+    Central access point for logging (Singleton).
+    Singleton is essential here - the logger is a global shared resource.
+    All parts of a system should write to the SAME logger instance.
+    """
     _instance = None
     _singleton_lock = threading.Lock()
 
@@ -170,8 +251,6 @@ class CustomLogger:
         """Dispatches log message to all configured appenders if level meets requirement."""
         if level >= self.config.min_level:
             log_data = LogMessage(level, message_text)
-            # Parallel execution of appenders or simple iteration?
-            # Thread-safety is key within appenders.
             for appender in self.config.appenders:
                 appender.append(log_data)
 
@@ -191,11 +270,11 @@ if __name__ == "__main__":
 
     logger = CustomLogger.get_instance()
 
-    # 1. Configuration
+    # 1. Configure
     logger.config.set_level(LogLevel.DEBUG)
     logger.config.add_appender(ConsoleAppender())
-    
-    log_file = "app_logs.txt"
+
+    log_file = "/tmp/app_logs.txt"
     if os.path.exists(log_file):
         os.remove(log_file)
     logger.config.add_appender(FileAppender(log_file))
@@ -206,19 +285,18 @@ if __name__ == "__main__":
 
     # 3. Dynamic Config Change
     logger.config.set_level(LogLevel.WARNING)
-    logger.info("This info message should NOT be printed or logged.")
+    logger.info("This INFO message should NOT appear (level is now WARNING).")
     logger.error("A simulated database error occurred.")
 
     # 4. Multi-threaded Logging Simulation
-    print("\n--- Starting Concurrent Logging Demo ---")
-    
+    print("\n--- Concurrent Logging Demo ---")
+
     def worker(thread_name: str):
         for i in range(3):
             logger.warning(f"Message {i} from {thread_name}")
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-        threads = [f"Thread-{j}" for j in range(5)]
-        executor.map(worker, threads)
+        executor.map(worker, [f"Thread-{j}" for j in range(5)])
 
     # 5. Verify File Content
     print("\n--- Verifying File Logs ---")

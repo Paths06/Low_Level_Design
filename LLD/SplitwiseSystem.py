@@ -1,13 +1,94 @@
+# fmt: off
+# ==============================================================================
+#  SPLITWISE SYSTEM — ASCII CLASS DIAGRAM
+# ==============================================================================
+#
+#  ┌──────────────────────────────────────────────────────────────────────────┐
+#  │                         SPLITWISE SYSTEM                                 │
+#  └──────────────────────────────────────────────────────────────────────────┘
+#
+#  ┌─────────────────────────────────────────────┐
+#  │              SplitwiseService               │  ← Facade
+#  ├─────────────────────────────────────────────┤
+#  │ + users: Dict[str, User]                    │
+#  │ + expenses: List[Expense]                   │
+#  │ + balances: Dict[str, Dict[str, Decimal]]   │
+#  │ - _lock: Lock                               │
+#  ├─────────────────────────────────────────────┤
+#  │ + add_user()                                │
+#  │ + add_expense(payer, total, split, members) │
+#  │ + settle_balance(paid_by, paid_to, amount)  │
+#  │ + show_balances()                           │
+#  └─────────────────────────────────────────────┘
+#                     │
+#                     │ creates
+#                     ▼
+#  ┌─────────────────────────────────────────────┐
+#  │                 Expense                     │
+#  ├─────────────────────────────────────────────┤
+#  │ + id: str                                   │
+#  │ + description: str                          │
+#  │ + amount: Decimal                           │
+#  │ + paid_by: User                             │
+#  │ + split: SplitStrategy                      │
+#  │ + members: List[User]                       │
+#  ├─────────────────────────────────────────────┤
+#  │ + compute_shares() -> Dict[User, Decimal]   │
+#  └─────────────────────────────────────────────┘
+#                     │ 1
+#                     ▼
+#  ┌─────────────────────────────────────────────┐
+#  │           SplitStrategy (ABC)               │  ← Strategy Pattern
+#  ├─────────────────────────────────────────────┤
+#  │ + compute(amount, members): Dict[User,Dec]  │
+#  └──────────────┬──────────────────────────────┘
+#                 │
+#       ┌─────────┼──────────┐
+#       ▼         ▼          ▼
+#  ┌─────────┐ ┌────────┐ ┌──────────────────────┐
+#  │ Equal   │ │ Exact  │ │    PercentSplit       │
+#  │  Split  │ │ Split  │ ├──────────────────────┤
+#  ├─────────┤ ├────────┤ │ percentages: Dict    │
+#  │ amount/n│ │fixed   │ │ (must sum to 100%)   │
+#  │ each    │ │amounts │ └──────────────────────┘
+#  └─────────┘ └────────┘
+#
+#  ┌──────────────────────────────┐
+#  │            User              │
+#  ├──────────────────────────────┤
+#  │ + id: str                    │
+#  │ + name: str                  │
+#  │ + email: str                 │
+#  └──────────────────────────────┘
+#
+#  Balance Map Structure:
+#  balances[user_a_id][user_b_id] = X
+#  → means user_a is OWED X by user_b (user_b owes user_a)
+#  → Positive = user_a gets money FROM user_b
+#  → Negative = user_a OWES user_b
+#
+#  RELATIONSHIPS:
+#  SplitwiseService ──*──> User           (registered users)
+#  SplitwiseService ──*──> Expense        (recorded expenses)
+#  Expense ──1──> SplitStrategy          (how to split the bill)
+#  Expense ──1──> User (payer)           (who paid)
+#  Expense ──*──> User (members)         (who shares the split)
+#  EqualSplit ──▷── SplitStrategy        (implements: amount/n each)
+#  ExactSplit ──▷── SplitStrategy        (implements: fixed amounts)
+#  PercentSplit ──▷── SplitStrategy      (implements: % based)
+#  Thread-safe: _lock guards balances dict and expense list
+# ==============================================================================
+# fmt: on
 import threading
 import uuid
 from abc import ABC, abstractmethod
 from decimal import Decimal, ROUND_HALF_UP
 from enum import Enum
-from typing import List, Dict, Optional, Set
+from typing import List, Dict, Optional
 
 """
 ==============================================================================================
-SPLITWISE LOW LEVEL DESIGN (PYTHON - PRODUCTION GRADE)
+SPLITWISE LOW LEVEL DESIGN (INTERVIEW OPTIMIZED)
 ==============================================================================================
 
 Key Features:
@@ -16,12 +97,44 @@ Key Features:
 3. Balance Calculation: Tracks "Who owes Whom" across users.
 4. Settlement: Logic to clear debts between users.
 5. Concurrency: Thread-safe balance updates.
-6. Robustness: Decimal for financial accuracy, logging, docstrings.
+6. Precision: Decimal for financial accuracy.
 
 Design Patterns:
-1. Singleton: SplitwiseService (Facade).
+1. Facade: SplitwiseService (Central Controller).
 2. Strategy/Polymorphism: Split types (Equal, Exact, Percent).
-3. Observer: (Not explicitly used but often useful for notifications).
+
+Class Design Diagram:
+---------------------
+[SplitwiseService] "1" *-- "*" [User]
+[SplitwiseService] "1" *-- "*" [Group]
+[Group] "1" *-- "*" [Expense]
+[Expense] "1" *-- "*" [Split]
+[Expense] "1" *-- "1" [User] (PaidBy)
+[Split] <|-- [EqualSplit]
+[Split] <|-- [ExactSplit]
+[Split] <|-- [PercentSplit]
+[User] ..> [BalanceSheet] (Map<User, Decimal>)
+
+Class Details:
+---------------------
+1. SplitwiseService (Facade)
+   - Role: Main controller.
+   - Methods: addExpense(), settleBalance(), showBalances().
+
+2. Expense
+   - Role: Represents a financial transaction shared between users.
+   - Attributes: amount, paidBy, splits (List), splitType.
+
+3. Split (Abstract)
+   - Role: Represents a share of an expense for one user.
+   - Subclasses: EqualSplit, ExactSplit, PercentSplit.
+
+4. SplitType (Enum)
+   - Types: EQUAL, EXACT, PERCENT.
+
+5. User
+   - Role: Participant.
+   - Attributes: id, name, email.
 """
 
 # ==========================================
@@ -92,35 +205,19 @@ class Group:
         self.expenses.append(expense)
 
 # ==========================================
-# Service Manager (Singleton)
+# Service Manager (Facade)
 # ==========================================
 
 class SplitwiseService:
-    """Facade for managing users, groups, and expenses (Singleton)."""
-    _instance = None
-    _singleton_lock = threading.Lock()
-
-    def __new__(cls):
-        with cls._singleton_lock:
-            if cls._instance is None:
-                cls._instance = super(SplitwiseService, cls).__new__(cls)
-                cls._instance._initialized = False
-            return cls._instance
-
+    """Facade for managing users, groups, and expenses."""
     def __init__(self):
-        if self._initialized:
-            return
         self.users: Dict[str, User] = {}
         self.groups: Dict[str, Group] = {}
         # Balance Sheet: Map[User1_ID, Map[User2_ID, Decimal]]
-        # Positive values: User1 gets from User2. Negative values: User1 owes User2.
+        # Positive: User1 is owed by User2. Negative: User1 owes User2.
         self.balance_sheet: Dict[str, Dict[str, Decimal]] = {}
-        self._initialized = True
+        self._lock = threading.Lock()
         print("INFO: SplitwiseService initialized.")
-
-    @classmethod
-    def get_instance(cls):
-        return cls()
 
     def add_user(self, user: User):
         self.users[user.id] = user
@@ -131,38 +228,34 @@ class SplitwiseService:
 
     def add_expense(self, desc: str, amount: Decimal, paid_by: User, splits: List[Split], split_type: SplitType):
         """Processes an expense and updates balances across all participants."""
-        # 1. Validate and calculate split amounts
         self._calculate_splits(amount, splits, split_type)
-        
-        # 2. Update balance sheet
-        with self._singleton_lock:
+
+        with self._lock:
             for split in splits:
                 paid_to = split.user
                 if paid_by.id == paid_to.id:
                     continue
-                
-                # updateBalance(paidBy, paidTo, splitAmt)
-                # user[paidBy] gets back splitAmt from user[paidTo]
+                # paidBy gets back split.amount from paid_to
                 self._update_balance(paid_by.id, paid_to.id, split.amount)
-                # inverse: user[paidTo] owes splitAmt to user[paidBy]
+                # paid_to owes split.amount to paidBy
                 self._update_balance(paid_to.id, paid_by.id, -split.amount)
 
-        print(f"INFO: Expense added: '{desc}' - Amount: {amount} paid by {paid_by.name}")
+        print(f"INFO: Expense '{desc}' - {amount} paid by {paid_by.name}")
 
-    def _calculate_splits(self, total_amount: Decimal, splits: List[Split], split_type: SplitType):
+    def _calculate_splits(self, total: Decimal, splits: List[Split], split_type: SplitType):
         if split_type == SplitType.EQUAL:
-            split_amt = (total_amount / len(splits)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            split_amt = (total / len(splits)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
             for s in splits:
                 s.amount = split_amt
-            # Fix rounding remainder on first split if necessary
+            # Fix rounding remainder on first split
             total_calc = split_amt * len(splits)
-            if total_calc != total_amount:
-                splits[0].amount += (total_amount - total_calc)
-        
+            if total_calc != total:
+                splits[0].amount += (total - total_calc)
+
         elif split_type == SplitType.PERCENT:
             for s in splits:
                 if isinstance(s, PercentSplit):
-                    s.amount = (total_amount * Decimal(str(s.percent)) / Decimal("100")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+                    s.amount = (total * Decimal(str(s.percent)) / Decimal("100")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
         # EXACT: s.amount is already provided
 
     def _update_balance(self, u1_id: str, u2_id: str, amount: Decimal):
@@ -171,7 +264,7 @@ class SplitwiseService:
 
     def settle_balance(self, paid_by: User, paid_to: User, amount: Decimal):
         """Processes a settlement transaction between two users."""
-        with self._singleton_lock:
+        with self._lock:
             self._update_balance(paid_by.id, paid_to.id, amount)
             self._update_balance(paid_to.id, paid_by.id, -amount)
         print(f"INFO: Settled: {paid_by.name} paid {amount} to {paid_to.name}")
@@ -180,30 +273,25 @@ class SplitwiseService:
         """Prints all debts/receivables for a specific user."""
         balances = self.balance_sheet.get(user_id, {})
         user_name = self.users[user_id].name
-        
-        non_zero_found = False
-        for other_id, amount in balances.items():
-            if abs(amount) > Decimal("0.00"):
-                non_zero_found = True
-                other_name = self.users[other_id].name
-                if amount > 0:
-                    print(f"INFO: {user_name} gets back ${amount} from {other_name}")
-                else:
-                    print(f"INFO: {user_name} owes ${abs(amount)} to {other_name}")
-        
-        if not non_zero_found:
+        non_zero = [(self.users[oid].name, amt) for oid, amt in balances.items() if abs(amt) > Decimal("0.00")]
+        if not non_zero:
             print(f"INFO: No pending balances for {user_name}.")
+            return
+        for other_name, amount in non_zero:
+            if amount > 0:
+                print(f"INFO: {user_name} gets back ${amount} from {other_name}")
+            else:
+                print(f"INFO: {user_name} owes ${abs(amount)} to {other_name}")
 
 # ==========================================
-# Main Execution
+# Main Execution / Demo
 # ==========================================
 
 if __name__ == "__main__":
     print("--- Starting Splitwise System Demo ---")
-    
-    service = SplitwiseService.get_instance()
 
-    # 1. Setup Users
+    service = SplitwiseService()
+
     alice = User("U1", "Alice")
     bob = User("U2", "Bob")
     charlie = User("U3", "Charlie")
@@ -211,20 +299,17 @@ if __name__ == "__main__":
     service.add_user(bob)
     service.add_user(charlie)
 
-    # 2. Equal Split
-    print("\n[Scenario] Alice pays 300 for Lunch (Split: Equal among Alice, Bob, Charlie)")
+    print("\n[Scenario 1] Alice pays 300 for Lunch (Equal split with Bob & Charlie)")
     splits1 = [EqualSplit(alice), EqualSplit(bob), EqualSplit(charlie)]
     service.add_expense("Lunch", Decimal("300"), alice, splits1, SplitType.EQUAL)
-    service.show_balances("U2") # Bob owes Alice 100
+    service.show_balances("U2")  # Bob owes Alice 100
 
-    # 3. Exact Split
-    print("\n[Scenario] Bob pays 100 for Cab (Split: Alice owes 30, Bob 70)")
+    print("\n[Scenario 2] Bob pays 100 for Cab (Alice owes 30, Bob keeps 70)")
     splits2 = [ExactSplit(alice, Decimal("30")), ExactSplit(bob, Decimal("70"))]
     service.add_expense("Cab", Decimal("100"), bob, splits2, SplitType.EXACT)
-    service.show_balances("U1") # Alice owes Bob 30 + 100 = 130
+    service.show_balances("U1")  # Alice owes Bob 30
 
-    # 4. Settlement
-    print("\n[Scenario] Alice pays 100 to Bob to settle partially.")
+    print("\n[Scenario 3] Alice pays 100 to Bob to settle partially.")
     service.settle_balance(alice, bob, Decimal("100"))
-    service.show_balances("U1") # Alice owes Bob 30 now
-    service.show_balances("U3") # Charlie owes Alice 100
+    service.show_balances("U1")
+    service.show_balances("U3")  # Charlie still owes Alice 100

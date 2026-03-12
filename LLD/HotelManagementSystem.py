@@ -1,3 +1,65 @@
+# fmt: off
+# ==============================================================================
+#  HOTEL MANAGEMENT SYSTEM — ASCII CLASS DIAGRAM
+# ==============================================================================
+#
+#  ┌──────────────────────────────────────────────────────────────────────────┐
+#  │                     HOTEL MANAGEMENT SYSTEM                              │
+#  └──────────────────────────────────────────────────────────────────────────┘
+#
+#  ┌─────────────────────────┐           ┌──────────────────────────────┐
+#  │      HotelManager       │  1    *   │             Room             │
+#  │       (Facade)          │──────────>│            (ABC)             │
+#  ├─────────────────────────┤           ├──────────────────────────────┤
+#  │ + rooms: Dict           │           │ + id: str                    │
+#  │ + reservations: Dict    │           │ + type: RoomType (enum)      │
+#  ├─────────────────────────┤           │ + price: float               │
+#  │ + add_room()            │           │ + status: RoomStatus (enum)  │
+#  │ + find_available_room() │           │ - _lock: Lock                │
+#  │ + create_reservation()  │           └──────────────┬───────────────┘
+#  │ + check_in()            │                          │
+#  │ + check_out()           │             ┌────────────┼────────────┐
+#  └─────────────────────────┘             │            │            │
+#                                          ▼            ▼            ▼
+#  ┌──────────────────────┐     ┌──────────────┐ ┌──────────┐ ┌──────────┐
+#  │     RoomFactory      │     │ StandardRoom │ │DeluxeRoom│ │SuiteRoom │
+#  ├──────────────────────┤     ├──────────────┤ ├──────────┤ ├──────────┤
+#  │ + create_room(       │     │ $100/night   │ │$200/night│ │$500/night│
+#  │   type, id): Room    │     └──────────────┘ └──────────┘ └──────────┘
+#  └──────────────────────┘
+#                                 ┌──────────────────────────────────────┐
+#  ┌───────────────────┐          │               Reservation            │
+#  │       Guest       │    1     ├──────────────────────────────────────┤
+#  ├───────────────────┤──────────│ + id: str                            │
+#  │ + id: str         │          │ + guest: Guest                        │
+#  │ + name: str       │          │ + room: Room                          │
+#  │ + email: str      │          │ + check_in_date: datetime             │
+#  └───────────────────┘          │ + nights: int                         │
+#                                 │ + status: ReservationStatus (enum)   │
+#  ┌───────────────────┐          │ + total_amount: float                 │
+#  │  PaymentStrategy  │          ├──────────────────────────────────────┤
+#  │    (ABC/Iface)    │          │ + process_payment(method): bool       │
+#  ├───────────────────┤          └──────────────────────────────────────┘
+#  │ + pay(amt): bool  │
+#  └────────┬──────────┘    ┌──────────────┐   ┌──────────────────┐
+#           │               │  RoomType    │   │   RoomStatus     │
+#           ▼               ├──────────────┤   ├──────────────────┤
+#  ┌────────────────────┐   │ STANDARD     │   │ AVAILABLE        │
+#  │ CreditCardPayment  │   │ DELUXE       │   │ OCCUPIED         │
+#  └────────────────────┘   │ SUITE        │   │ MAINTENANCE      │
+#                           └──────────────┘   └──────────────────┘
+#
+#  RELATIONSHIPS:
+#  HotelManager ──*──> Room           (manages all rooms)
+#  HotelManager ──*──> Reservation    (tracks all reservations)
+#  Reservation  ──1──> Guest          (belongs to one guest)
+#  Reservation  ──1──> Room           (reserves one room)
+#  RoomFactory creates StandardRoom | DeluxeRoom | SuiteRoom (Factory Pattern)
+#  StandardRoom / DeluxeRoom / SuiteRoom ──▷── Room  (inheritance)
+#  CreditCardPayment ──▷── PaymentStrategy             (implements)
+#  Reservation.process_payment() uses PaymentStrategy  (Strategy Pattern)
+# ==============================================================================
+# fmt: on
 import threading
 import uuid
 from abc import ABC, abstractmethod
@@ -7,17 +69,16 @@ from typing import Dict, List, Optional
 
 """
 ==============================================================================================
-HOTEL MANAGEMENT SYSTEM LOW LEVEL DESIGN (PYTHON - PRODUCTION GRADE)
+HOTEL MANAGEMENT SYSTEM LOW LEVEL DESIGN (INTERVIEW OPTIMIZED)
 ==============================================================================================
 
 Key Features:
 1. Room Management: Types (Standard, Deluxe, Suite) and Status (Available, Occupied).
 2. Reservation: Booking flow, Check-In, Check-Out.
 3. Concurrency: Synchronized booking using threading locks.
-4. Robustness: Logging, custom exceptions, and type hinting.
 
 Design Patterns:
-1. Singleton: HotelManager (Facade).
+1. Facade: HotelManager (Central Controller).
 2. Factory: RoomFactory (Creating appropriate Room subclasses).
 3. Strategy: PaymentStrategy.
 
@@ -31,14 +92,13 @@ Class Design Diagram:
 [Room] <|-- [SuiteRoom]
 [Reservation] "1" *-- "1" [Guest]
 [Reservation] "1" *-- "1" [Room]
-[Reservation] "1" *-- "1" [Invoice]
 [Room] ..> [RoomStatus]
 
 Class Details:
 ---------------------
-1. HotelManager (Singleton)
+1. HotelManager (Facade)
    - Role: Central system controller.
-   - Methods: addRoom(), findAvailableRoom(), bookRoom(), checkIn(), checkOut().
+   - Methods: addRoom(), findAvailableRoom(), createReservation(), checkIn(), checkOut().
 
 2. Room (Abstract)
    - Role: Physical room entity.
@@ -49,7 +109,7 @@ Class Details:
 
 4. Reservation
    - Role: Transaction record.
-   - Attributes: id, guest, room, dateRange, status.
+   - Attributes: id, guest, room, nights, status, total_amount.
 """
 
 # ==========================================
@@ -95,7 +155,6 @@ class PaymentStrategy(ABC):
         pass
 
 class CreditCardPayment(PaymentStrategy):
-    """Credit card payment implementation."""
     def pay(self, amount: float) -> bool:
         print(f"INFO: Processing credit card payment of ${amount:.2f}")
         return True
@@ -105,7 +164,6 @@ class CreditCardPayment(PaymentStrategy):
 # ==========================================
 
 class Guest:
-    """Represents a hotel guest."""
     def __init__(self, guest_id: str, name: str, email: str = ""):
         self.id = guest_id
         self.name = name
@@ -136,7 +194,7 @@ class SuiteRoom(Room):
         super().__init__(room_id, RoomType.SUITE, 500.0)
 
 class RoomFactory:
-    """Factory to create room instances."""
+    """Factory to create room instances by type."""
     @staticmethod
     def create_room(room_type: RoomType, room_id: str) -> Room:
         if room_type == RoomType.STANDARD:
@@ -159,47 +217,26 @@ class Reservation:
         self.total_amount = room.price * nights
 
     def process_payment(self, method: PaymentStrategy) -> bool:
-        """Process the payment for this reservation."""
         if method.pay(self.total_amount):
             print(f"INFO: Payment successful for reservation {self.id}")
             return True
         return False
 
 # ==========================================
-# Manager (Singleton)
+# Manager (Facade)
 # ==========================================
 
 class HotelManager:
-    """Central controller for the Hotel Management System (Singleton)."""
-    _instance = None
-    _singleton_lock = threading.Lock()
-
-    def __new__(cls):
-        with cls._singleton_lock:
-            if cls._instance is None:
-                cls._instance = super(HotelManager, cls).__new__(cls)
-                cls._instance._initialized = False
-            return cls._instance
-
+    """Central controller for the Hotel Management System."""
     def __init__(self):
-        if self._initialized:
-            return
         self.rooms: Dict[str, Room] = {}
         self.reservations: Dict[str, Reservation] = {}
-        self._initialized = True
         print("INFO: HotelManager initialized.")
 
-    @classmethod
-    def get_instance(cls):
-        return cls()
-
     def add_room(self, room: Room):
-        """Add a room to the system."""
         self.rooms[room.id] = room
-        print(f"DEBUG: Added room {room.id} to system.")
 
     def find_available_room(self, room_type: RoomType) -> Optional[Room]:
-        """Search for an available room of the specified type."""
         for room in self.rooms.values():
             if room.type == room_type and room.status == RoomStatus.AVAILABLE:
                 return room
@@ -209,10 +246,7 @@ class HotelManager:
         """Create a new reservation with thread safety."""
         with room._lock:
             if room.status != RoomStatus.AVAILABLE:
-                print(f"WARNING: Attempted to book unavailable room {room.id}")
                 raise RoomUnavailableException(f"Room {room.id} is not available.")
-            
-            # Reservation occupies the room for this simple simulation
             room.status = RoomStatus.OCCUPIED
             res = Reservation(guest, room, date, nights)
             self.reservations[res.id] = res
@@ -220,71 +254,53 @@ class HotelManager:
             return res
 
     def check_in(self, reservation_id: str):
-        """Perform guest check-in."""
         res = self.reservations.get(reservation_id)
         if not res:
             raise ReservationNotFoundException(f"Reservation {reservation_id} not found.")
-        
         if res.status == ReservationStatus.CONFIRMED:
             res.status = ReservationStatus.CHECKED_IN
             res.room.status = RoomStatus.OCCUPIED
-            print(f"INFO: Guest {res.guest.name} checked into Room {res.room.id}")
+            print(f"INFO: {res.guest.name} checked into Room {res.room.id}")
 
     def check_out(self, reservation_id: str):
-        """Perform guest check-out and free the room."""
         res = self.reservations.get(reservation_id)
         if not res:
             raise ReservationNotFoundException(f"Reservation {reservation_id} not found.")
-        
         res.status = ReservationStatus.CHECKED_OUT
         res.room.status = RoomStatus.AVAILABLE
-        print(f"INFO: Guest {res.guest.name} checked out from Room {res.room.id}")
+        print(f"INFO: {res.guest.name} checked out from Room {res.room.id}")
 
 # ==========================================
-# Main execution
+# Main Execution / Demo
 # ==========================================
 
 if __name__ == "__main__":
     print("--- Starting Hotel Management System Demo ---")
-    
-    hotel = HotelManager.get_instance()
 
-    # 1. Setup
+    hotel = HotelManager()
     hotel.add_room(RoomFactory.create_room(RoomType.STANDARD, "101"))
     hotel.add_room(RoomFactory.create_room(RoomType.DELUXE, "201"))
     hotel.add_room(RoomFactory.create_room(RoomType.SUITE, "301"))
 
-    # 2. Guests
     guest1 = Guest("G1", "John Doe", "john@example.com")
     guest2 = Guest("G2", "Jane Smith", "jane@example.com")
 
-    # 3. Operations
     print("[Action] John searches for DELUXE room.")
-    available_room = hotel.find_available_room(RoomType.DELUXE)
-    
-    if available_room:
+    room = hotel.find_available_room(RoomType.DELUXE)
+    if room:
         try:
-            # Create Reservation
-            reservation = hotel.create_reservation(guest1, available_room, datetime.now(), 3)
-            
-            # Payment
-            if reservation.process_payment(CreditCardPayment()):
-                # Check-In
-                hotel.check_in(reservation.id)
-                
-                # Check-Out (normally later)
-                # hotel.check_out(reservation.id)
-                
+            res = hotel.create_reservation(guest1, room, datetime.now(), 3)
+            if res.process_payment(CreditCardPayment()):
+                hotel.check_in(res.id)
+                hotel.check_out(res.id)
         except HotelException as e:
-            print(f"ERROR: Operation failed: {e}")
+            print(f"ERROR: {e}")
 
-    # 4. Jane tries to find a DELUXE room (none left)
-    print("[Action] Jane searches for DELUXE room.")
-    jane_room = hotel.find_available_room(RoomType.DELUXE)
-    if not jane_room:
+    print("[Action] Jane searches for DELUXE room (none left).")
+    if not hotel.find_available_room(RoomType.DELUXE):
         print("No Deluxe rooms available for Jane.")
 
-    # 5. Jane books SUITE
+    print("[Action] Jane books a SUITE.")
     suite = hotel.find_available_room(RoomType.SUITE)
     if suite:
         res2 = hotel.create_reservation(guest2, suite, datetime.now(), 1)

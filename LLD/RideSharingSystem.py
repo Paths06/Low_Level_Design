@@ -1,3 +1,93 @@
+# fmt: off
+# ==============================================================================
+#  RIDE SHARING SYSTEM — ASCII CLASS DIAGRAM
+# ==============================================================================
+#
+#  ┌──────────────────────────────────────────────────────────────────────────┐
+#  │                    RIDE SHARING SYSTEM (Uber-like)                       │
+#  └──────────────────────────────────────────────────────────────────────────┘
+#
+#  ┌────────────────────────────┐
+#  │    RideSharingService      │  ← Facade
+#  ├────────────────────────────┤
+#  │ + riders: Dict             │
+#  │ + drivers: Dict            │
+#  │ + trips: Dict              │
+#  │ + pricing: PricingStrategy │
+#  ├────────────────────────────┤
+#  │ + register_rider()         │
+#  │ + register_driver()        │
+#  │ + request_ride()           │
+#  │ + complete_trip()          │
+#  │ -_find_nearest_driver()    │
+#  └────────────────────────────┘
+#            │          │
+#        ....│..........│....
+#        .   ▼          ▼   .
+#  ┌──────────────┐  ┌──────────────────────────┐
+#  │    Rider     │  │         Driver           │
+#  ├──────────────┤  ├──────────────────────────┤
+#  │ + id: str    │  │ + id: str                │
+#  │ + name: str  │  │ + name: str              │
+#  │ + location   │  │ + location: (x, y)       │
+#  └──────────────┘  │ + status: DriverStatus   │
+#                    │   (enum)                 │
+#                    ├──────────────────────────┤
+#                    │ + update_location()      │
+#                    └──────────────────────────┘
+#
+#  ┌────────────────────────────────────────────────────┐
+#  │                       Trip                         │
+#  ├────────────────────────────────────────────────────┤
+#  │ + id: str                                          │
+#  │ + rider: Rider                                     │
+#  │ + driver: Driver                                   │
+#  │ + pickup_loc, dropoff_loc: (x, y)                  │
+#  │ + status: TripStatus (enum)                        │
+#  │ + fare: float                                      │
+#  │ + start_time, end_time: datetime                   │
+#  ├────────────────────────────────────────────────────┤
+#  │ + start()                                          │
+#  │ + complete(pricing_strategy)                       │
+#  └────────────────────────────────────────────────────┘
+#
+#  ┌─────────────────────────────────┐
+#  │       PricingStrategy           │  ← Strategy Pattern
+#  │         (ABC/Interface)         │
+#  ├─────────────────────────────────┤
+#  │ + calculate(trip): float        │
+#  └─────────────────┬───────────────┘
+#                    │
+#             ┌──────┴──────┐
+#             │             │
+#             ▼             ▼
+#  ┌───────────────────┐ ┌────────────────────────┐
+#  │  RegularPricing   │ │   SurgePricing         │
+#  ├───────────────────┤ ├────────────────────────┤
+#  │ BASE=2.0 +        │ │ SURGE_MULTIPLIER=2.5   │
+#  │ 1.0 per unit dist │ │ applied on top of base │
+#  └───────────────────┘ └────────────────────────┘
+#
+#  ┌─────────────────────────┐  ┌─────────────────────┐
+#  │   DriverStatus (Enum)   │  │  TripStatus (Enum)  │
+#  ├─────────────────────────┤  ├─────────────────────┤
+#  │  AVAILABLE              │  │  REQUESTED          │
+#  │  BUSY                   │  │  IN_PROGRESS        │
+#  │  OFFLINE                │  │  COMPLETED          │
+#  └─────────────────────────┘  │  CANCELLED          │
+#                               └─────────────────────┘
+#
+#  RELATIONSHIPS:
+#  RideSharingService ──*──> Rider          (registered riders)
+#  RideSharingService ──*──> Driver         (registered drivers)
+#  RideSharingService ──*──> Trip           (active and past trips)
+#  RideSharingService ──1──> PricingStrategy(swappable pricing)
+#  Trip ──1──> Rider                        (who requested)
+#  Trip ──1──> Driver                       (who serves)
+#  RegularPricing / SurgePricing ──▷── PricingStrategy (implements)
+#  Driver.status transitions: AVAILABLE → BUSY (on ride start) → AVAILABLE (on complete)
+# ==============================================================================
+# fmt: on
 import threading
 import uuid
 import math
@@ -8,7 +98,7 @@ from datetime import datetime
 
 """
 ==============================================================================================
-RIDE SHARING SERVICE (LIKE UBER) LOW LEVEL DESIGN (PYTHON - PRODUCTION GRADE)
+RIDE SHARING SERVICE (LIKE UBER) LOW LEVEL DESIGN (INTERVIEW OPTIMIZED)
 ==============================================================================================
 
 Key Features Implemented:
@@ -16,13 +106,12 @@ Key Features Implemented:
 2. Geo-Location: Distance-based calculation and nearest driver matching.
 3. Trip Lifecycle: REQUESTED -> ASSIGNED -> ON_TRIP -> COMPLETED.
 4. Cost Calculation: Strategy pattern for Regular/Premium pricing.
-5. Concurrency: Thread-safe driver status and trip management.
-6. Production Standards: Logging, type hints, docstrings.
+5. Concurrency: Thread-safe driver status updates.
 
 Design Patterns:
-1. Singleton: RideSharingService (Facade).
-2. Strategy: PricingStrategy (Surge/RideType).
-3. State: Handled via TripStatus.
+1. Facade: RideSharingService (Central Controller).
+2. Strategy: PricingStrategy (Regular/Premium).
+3. State: Handled via TripStatus and DriverStatus.
 
 Class Design Diagram:
 ---------------------
@@ -39,19 +128,21 @@ Class Design Diagram:
 
 Class Details:
 ---------------------
-1. RideSharingService (Singleton)
+1. RideSharingService (Facade)
    - Role: Main controller.
    - Methods: requestRide(), completeRide().
 
 2. Trip
-   - Attributes: id, rider, driver, src, dest, status, price.
-   - Methods: start(), end(), calculateFare().
+   - Attributes: id, rider, driver, src, dest, status, fare.
+   - Methods: startTrip(), completeTrip().
 
 3. Driver
    - Attributes: status (AVAILABLE, BUSY), location.
+   - Methods: updateStatus().
 
 4. PricingStrategy
-   - Role: Calculate fare based on distance/time.
+   - Role: Calculate fare based on distance and time.
+   - Impls: RegularPricing, PremiumPricing.
 """
 
 # ==========================================
@@ -63,7 +154,6 @@ class RideType(Enum):
     PREMIUM = "PREMIUM"
 
 class TripStatus(Enum):
-    REQUESTED = "REQUESTED"
     ASSIGNED = "ASSIGNED"
     ON_TRIP = "ON_TRIP"
     COMPLETED = "COMPLETED"
@@ -128,7 +218,7 @@ class Driver(User):
     def update_status(self, status: DriverStatus):
         with self._lock:
             self.status = status
-            print(f"DEBUG: Driver {self.name} status updated to {status.name}")
+            print(f"INFO: Driver {self.name} status -> {status.name}")
 
 class Trip:
     """Represents a single ride journey."""
@@ -141,49 +231,27 @@ class Trip:
         self.pricing = pricing
         self.status = TripStatus.ASSIGNED
         self.fare = 0.0
-        self.start_time: Optional[datetime] = None
-        self.end_time: Optional[datetime] = None
 
     def start_trip(self):
         self.status = TripStatus.ON_TRIP
-        self.start_time = datetime.now()
-        print(f"INFO: Trip {self.id} started. {self.rider.name} with {self.driver.name}")
+        print(f"INFO: Trip {self.id[:8]}... started. {self.rider.name} with {self.driver.name}")
 
     def complete_trip(self):
         self.status = TripStatus.COMPLETED
-        self.end_time = datetime.now()
         distance = self.src.distance_to(self.dest)
-        # Assuming fixed duration for demo, in real life use duration between start/end
-        self.fare = self.pricing.calculate_fare(distance, 15.0) 
-        print(f"INFO: Trip {self.id} completed. Total Fare: ${self.fare:.2f}")
+        self.fare = self.pricing.calculate_fare(distance, 15.0)  # 15min assumed for demo
+        print(f"INFO: Trip completed. Fare: ${self.fare:.2f}")
 
 # ==========================================
-# System Facade (Singleton)
+# System Facade
 # ==========================================
 
 class RideSharingService:
-    _instance = None
-    _singleton_lock = threading.Lock()
-
-    def __new__(cls):
-        with cls._singleton_lock:
-            if cls._instance is None:
-                cls._instance = super(RideSharingService, cls).__new__(cls)
-                cls._instance._initialized = False
-            return cls._instance
-
     def __init__(self):
-        if self._initialized:
-            return
         self.drivers: List[Driver] = []
         self.riders: Dict[str, Rider] = {}
         self.active_trips: Dict[str, Trip] = {}
-        self._initialized = True
-        print("INFO: RideSharingService (Uber Clone) initialized.")
-
-    @classmethod
-    def get_instance(cls):
-        return cls()
+        print("INFO: RideSharingService initialized.")
 
     def add_driver(self, driver: Driver):
         self.drivers.append(driver)
@@ -198,73 +266,56 @@ class RideSharingService:
             print(f"ERROR: Rider {rider_id} not registered.")
             return None
 
-        # Matching Logic: Nearest AVAILABLE driver
         best_driver = self._find_nearest_driver(src)
         if not best_driver:
             print("WARNING: No available drivers nearby.")
             return None
 
-        # Atomically mark driver as busy
         best_driver.update_status(DriverStatus.BUSY)
-
-        strategy = PremiumPricing() if ride_type == RideType.PREMIUM else RegularPricing()
-        trip = Trip(rider, best_driver, src, dest, strategy)
+        pricing = PremiumPricing() if ride_type == RideType.PREMIUM else RegularPricing()
+        trip = Trip(rider, best_driver, src, dest, pricing)
         self.active_trips[trip.id] = trip
-        
-        print(f"INFO: Ride assigned! Driver {best_driver.name} is arriving for {rider.name}")
+        print(f"INFO: Ride assigned! Driver {best_driver.name} -> {rider.name}")
         return trip
 
     def _find_nearest_driver(self, location: Location) -> Optional[Driver]:
-        best_driver = None
-        min_dist = float('inf')
-        
-        for d in self.drivers:
-            if d.status == DriverStatus.AVAILABLE:
-                dist = d.current_location.distance_to(location)
-                if dist < min_dist:
-                    min_dist = dist
-                    best_driver = d
-        return best_driver
+        available = [d for d in self.drivers if d.status == DriverStatus.AVAILABLE]
+        if not available:
+            return None
+        return min(available, key=lambda d: d.current_location.distance_to(location))
 
     def complete_ride(self, trip_id: str):
         trip = self.active_trips.get(trip_id)
         if trip:
             trip.complete_trip()
             trip.driver.update_status(DriverStatus.AVAILABLE)
-            trip.driver.current_location = trip.dest # Driver is now at destination
+            trip.driver.current_location = trip.dest
             del self.active_trips[trip_id]
         else:
             print(f"ERROR: Trip {trip_id} not found.")
 
 # ==========================================
-# Main Execution
+# Main Execution / Demo
 # ==========================================
 
 if __name__ == "__main__":
     print("--- Starting Ride Sharing System Demo ---")
-    
-    service = RideSharingService.get_instance()
 
-    # 1. Setup Drivers
+    service = RideSharingService()
+
     d1 = Driver("D1", "Bob", Location(1, 1))
     d2 = Driver("D2", "Charlie", Location(10, 10))
     service.add_driver(d1)
     service.add_driver(d2)
 
-    # 2. Setup Rider
     rider1 = Rider("R1", "Alice", Location(0, 0))
     service.add_rider(rider1)
 
-    # 3. Simulate Request
-    print("[Action] Alice requests a ride to (5, 5)")
+    print("[Action] Alice requests a REGULAR ride to (5, 5)")
     trip = service.request_ride("R1", rider1.current_location, Location(5, 5), RideType.REGULAR)
-    
+
     if trip:
-        # Simulate trip progress
         trip.start_trip()
-        
-        # Complete Trip
         service.complete_ride(trip.id)
 
-    # 4. Check Driver Status
-    print(f"INFO: Driver Bob status: {d1.status.name} at Location: {d1.current_location}")
+    print(f"INFO: Bob status: {d1.status.name} at Location: {d1.current_location}")
